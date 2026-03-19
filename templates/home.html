@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Morse Code Chat</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+</head>
+<body>
+    <div style="text-align: center; background-color: #f2f2f2; padding: 20px; border-bottom: 2px solid #ccc;">
+        <h1 style="margin: 0;">Morse Code Chat</h1>
+        <img alt="Morse Code" style="max-width: 100%; height: auto; margin-top: 10px;">
+    </div>
+    <p>Translated Message: <span id="messageList">
+        {% for record in records %}
+        <li style="background-color: {{ record.color }}; padding: 10px; margin: 5px;">
+            <strong>{{ record.input_string }}:</strong> {{ record.message }}
+        </li>
+        {% endfor %}
+    </span></p>
+    <textarea id="messageBox" rows="10" cols="150" placeholder="Please enter the morse code" autofocus style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.12); font-size: 16px; resize: vertical;"></textarea>
+    <script>
+        
+    
+    const socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        let message = '';
+        let isListening = false;
+
+        document.addEventListener('DOMContentLoaded', (event) => {
+    const socket = io.connect('http://' + document.domain + ':' + location.port);
+    let isListening = false;
+    let message = '';
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'j') {
+            console.log('J key pressed');
+            if (!isListening) {
+                isListening = true;
+                message = '';
+                console.log('Started listening for k and l');
+            } else {
+                isListening = false;
+                console.log('Message:', message);
+                socket.emit('/message', message);
+                message = '';  // Clear the message after sending
+                console.log('Stopped listening and cleared message');
+            }
+        } else if (isListening) {
+            if (event.key === 'k') {
+                message += '.';
+            } else if (event.key === 'l') {
+                message += '-';
+            } else if (event.key === ' ') {
+                message += ' ';
+            }
+            console.log('Current message:', message);
+        }
+    });
+});
+
+        document.addEventListener('DOMContentLoaded', (event) => {
+    const socket = io.connect('http://' + document.domain + ':' + location.port);
+
+    socket.on('connect', function () {
+        fetch('/connect', { credentials: 'same-origin' })  // Ensure cookies are sent
+            .then(response => response.json())
+            .then(data => {
+                console.log('User connected:', data.message);
+                fetchAllMessages();  // Fetch all messages on connect
+                // setInterval(pollForNewMessages, 5000);  // Continue polling for new messages
+            })
+            .catch(error => {
+                console.error('Error on connect:', error);
+            });
+    });
+});
+
+// Function to fetch all messages
+function fetchAllMessages() {
+    fetch('/full_messages', { credentials: 'same-origin' })  // Ensure cookies are sent
+        .then(response => response.json())
+        .then(messages => {
+            console.log('All messages on connect:', messages);
+            const messageList = document.getElementById('messageList');
+            messageList.innerHTML = ''; // Clear the message list before appending new messages
+            messages.forEach(message => {
+                const newListItem = document.createElement('li');
+                newListItem.style.backgroundColor = message.color;
+                newListItem.style.padding = '10px';
+                newListItem.style.margin = '5px';
+                newListItem.innerHTML = `<strong>${message.color}</strong> ${message.message}`;
+                messageList.appendChild(newListItem);
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching messages on connect:', error);
+        });
+}
+
+socket.on('/new_message', function(msg) {
+     const newListItem = document.createElement('li');
+                    newListItem.style.backgroundColor = msg.color;
+                    newListItem.style.padding = '10px';
+                    newListItem.style.margin = '5px';
+                    newListItem.innerHTML = `<strong>${msg.color}:</strong> ${msg.message}`;
+                    messageList.appendChild(newListItem);
+            });
+
+// this function is retired becuase, ot used to clog the terminal and is replaced by the above function
+function pollForNewMessages() {
+    fetch('/new_messages', { credentials: 'same-origin' })  // Ensure cookies are sent
+        .then(response => response.json())
+        .then(messages => {
+            console.log('New messages:', messages);
+            if (messages && messages.length > 0) {
+                const messageList = document.getElementById('messageList');
+                messages.forEach(message => {
+                    const newListItem = document.createElement('li');
+                    newListItem.style.backgroundColor = message.color;
+                    newListItem.style.padding = '10px';
+                    newListItem.style.margin = '5px';
+                    newListItem.innerHTML = `<strong>${message.color}:</strong> ${message.message}`;
+                    messageList.appendChild(newListItem);
+
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching new messages:', error);
+        });
+}
+
+
+    </script>
+    
+</body>
+</html>
