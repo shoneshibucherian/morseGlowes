@@ -1,137 +1,1092 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Morse Code Chat</title>
+
+    <!-- Favicon served by Flask from the static folder -->
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+
+    <!-- Google Fonts: Orbitron for headings, Share Tech Mono for body text (monospace terminal look) -->
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <!-- Socket.IO client library — handles real-time two-way communication with the Flask server -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+
+    <style>
+
+        /* ══════════════════════════════════════════
+           COLOR VARIABLES
+           Defined once here so we can reuse them
+           throughout the stylesheet easily.
+           ══════════════════════════════════════════ */
+        :root {
+            --green: #00ff41;           /* Bright phosphor green — main color */
+            --green-dim: #00a82b;       /* Dimmer green for secondary elements */
+            --green-glow: rgba(0, 255, 65, 0.15); /* Transparent green for glow effects */
+            --bg: #060a06;              /* Near-black background */
+            --bg-panel: #0a110a;        /* Slightly lighter panel background */
+            --bg-panel2: #0d160d;       /* Panel header background */
+            --border: #1a2e1a;          /* Subtle dark green border */
+            --border-active: #00ff41;   /* Bright border for active/focused elements */
+            --red: #ff3b3b;             /* Red for warnings and errors */
+            --amber: #ffb700;           /* Amber/yellow for ESP32 messages */
+            --text-dim: #4a7a4a;        /* Muted green for less important text */
+        }
+
+        /* ══════════════════════════════════════════
+           RESET
+           Removes default browser spacing so our
+           layout behaves consistently.
+           ══════════════════════════════════════════ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box; /* Makes width/height include padding and border */
+        }
+
+        /* ══════════════════════════════════════════
+           BODY
+           Full-height dark background with the
+           terminal font applied globally.
+           ══════════════════════════════════════════ */
+        body {
+            background-color: var(--bg);
+            color: var(--green);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;       /* Always fills the full screen height */
+            display: flex;
+            flex-direction: column;  /* Stacks header, main, and footer vertically */
+            overflow-x: hidden;      /* Prevents horizontal scrollbar */
+        }
+
+        /* ══════════════════════════════════════════
+           CRT SCANLINE EFFECT
+           Creates a subtle horizontal line pattern
+           over the whole page to look like an old
+           CRT monitor. Uses a repeating gradient
+           layered on top of everything (z-index 9999).
+           pointer-events: none means clicks pass through it.
+           ══════════════════════════════════════════ */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.08) 2px,
+                rgba(0, 0, 0, 0.08) 4px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* ══════════════════════════════════════════
+           HEADER
+           Top bar showing the app title on the left
+           and connection/location status on the right.
+           ══════════════════════════════════════════ */
+        header {
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between; /* Title left, status right */
+        }
+
+        /* Left side: app name stacked above subtitle */
+        .header-title {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Main app title — uses the Orbitron font for a futuristic look */
+        .header-title h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.65rem;
+            font-weight: 900;
+            letter-spacing: 0.15em;
+            text-shadow: 0 0 20px var(--green); /* Glowing green effect */
+        }
+
+        /* Small subtitle below the title */
+        .header-subtitle {
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            margin-top: 2px;
+        }
+
+        /* Right side: connection status and location displayed side by side */
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        /* Small circle indicator next to "Connected" / "Connecting..." */
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;           /* Makes it a circle */
+            background: var(--green-dim);
+            display: inline-block;
+            margin-right: 6px;
+            animation: pulse 2s infinite; /* Fades in and out continuously */
+        }
+
+        /* When Socket.IO is connected, the dot turns bright green and glows */
+        .status-dot.connected {
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+        }
+
+        /* Pulsing animation — fades the dot between full and 40% opacity */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Location status text — color changes based on permission state */
+        .location-status {
+            font-size: 0.85rem;
+            color: var(--text-dim); /* Default: pending */
+        }
+
+        .location-status.granted {
+            color: var(--green); /* Green when user allowed location */
+        }
+
+        .location-status.denied {
+            color: var(--red); /* Red when user denied location */
+        }
+
+        /* ══════════════════════════════════════════
+           MAIN LAYOUT
+           Centers the three panels and stacks them
+           vertically with spacing between them.
+           ══════════════════════════════════════════ */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;           /* Space between the three panels */
+            padding: 16px;
+            max-width: 1400px;   /* Keeps layout from stretching too wide on large screens */
+            width: 100%;
+            margin: 0 auto;      /* Centers the content horizontally */
+        }
+
+        /* ══════════════════════════════════════════
+           SHARED PANEL STYLES
+           All three boxes (message feed, input, keypad)
+           share these base styles.
+           ══════════════════════════════════════════ */
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Top bar inside each panel — shows a label and a badge (e.g. message count) */
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-panel2);
+            border-radius: 4px 4px 0 0; /* Rounded only on top corners */
+        }
+
+        /* Panel title text (e.g. "⬡ Incoming Transmissions") */
+        .panel-label {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        /* Small counter/status shown on the right side of the panel header */
+        .panel-badge {
+            font-size: 0.78rem;
+            color: var(--green-dim);
+            letter-spacing: 0.1em;
+        }
+
+        /* ══════════════════════════════════════════
+           BOX 1 — MESSAGE FEED
+           Scrollable list of received messages.
+           ══════════════════════════════════════════ */
+        .messages-panel {
+            height: 260px;
+        }
+
+        /* Scrollable inner area of the message feed */
+        .messages-panel .panel-body {
+            flex: 1;
+            overflow-y: auto;                    /* Enables vertical scrolling */
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            height: calc(260px - 41px);          /* Full panel height minus header height */
+        }
+
+        /* Custom scrollbar styling (WebKit browsers like Chrome) */
+        .messages-panel .panel-body::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .messages-panel .panel-body::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+
+        .messages-panel .panel-body::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        /* Each individual message row in the feed */
+        .message-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 8px 12px;
+            border-left: 3px solid var(--green-dim); /* Green left accent bar */
+            background: rgba(0, 255, 65, 0.03);
+            border-radius: 0 3px 3px 0;
+            animation: fadeIn 0.3s ease; /* Slides in from the left when added */
+        }
+
+        /* ESP32 messages get an amber accent instead of green */
+        .message-item.esp32 {
+            border-left-color: var(--amber);
+        }
+
+        /* Slide-in animation for new messages */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(-6px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* Small colored dot showing which user sent the message */
+        .message-color-tag {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-top: 4px;
+            flex-shrink: 0; /* Prevents the dot from shrinking */
+        }
+
+        .message-content {
+            flex: 1;
+        }
+
+        /* The decoded message text (e.g. "SOS") */
+        .message-text {
+            font-size: 1.05rem;
+            color: var(--green);
+            text-shadow: 0 0 8px rgba(0,255,65,0.4);
+        }
+
+        /* Small metadata below the message: timestamp, sender, and coordinates */
+        .message-meta {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            margin-top: 3px;
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Shown when there are no messages yet */
+        .no-messages {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            text-align: center;
+            margin: auto;
+            letter-spacing: 0.1em;
+        }
+
+        /* ══════════════════════════════════════════
+           BOX 2 — MORSE INPUT
+           Where the user types their Morse code
+           using K, L, Space, and Backspace.
+           ══════════════════════════════════════════ */
+        .input-panel {
+            height: 260px;
+        }
+
+        .input-panel .panel-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            gap: 10px;
+            height: calc(260px - 41px);
+        }
+
+        /* Instructions bar at the top of the input panel */
+        .input-directions {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            letter-spacing: 0.05em;
+            line-height: 1.5;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            background: var(--bg);
+        }
+
+        /* Highlighted key names inside the instructions */
+        .input-directions span {
+            color: var(--green);
+            font-weight: bold;
+        }
+
+        /* Warning shown when the user presses an invalid key */
+        .input-warning {
+            font-size: 0.85rem;
+            color: var(--red);
+            letter-spacing: 0.05em;
+            padding: 6px 12px;
+            border: 1px solid var(--red);
+            border-radius: 3px;
+            background: rgba(255, 59, 59, 0.05);
+            display: none;           /* Hidden by default, shown by JavaScript */
+            animation: flashWarning 0.3s ease;
+        }
+
+        /* Warning slides down when it appears */
+        @keyframes flashWarning {
+            0% { opacity: 0; transform: translateY(-4px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        .morse-input-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        /* The div where typed Morse code is displayed.
+           We use a div instead of an input so we have
+           full control over what keys are accepted. */
+        .morse-display {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 10px 14px;
+            font-size: 1.3rem;
+            color: var(--green);
+            letter-spacing: 0.15em;
+            text-shadow: 0 0 10px rgba(0,255,65,0.5);
+            word-break: break-all;
+            overflow-y: auto;
+            min-height: 50px;
+            cursor: text;
+            outline: none;
+            caret-color: var(--green);
+            position: relative;
+        }
+
+        /* Highlighted border when the input area is focused */
+        .morse-display:focus {
+            border-color: var(--green-dim);
+            box-shadow: 0 0 12px rgba(0,255,65,0.1);
+        }
+
+        /* Blinking cursor at the end of the typed Morse code */
+        .morse-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            background: var(--green);
+            margin-left: 2px;
+            vertical-align: middle;
+            animation: blink 1s step-end infinite;
+        }
+
+        /* Cursor blink animation — steps instantly between visible and hidden */
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Row below the input area with character count, Clear, and Send buttons */
+        .input-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        /* Character count / hint text on the left of the action row */
+        .morse-length {
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            flex: 1;
+        }
+
+        /* Shared button styles */
+        .btn {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.85rem;
+            letter-spacing: 0.1em;
+            padding: 8px 18px;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid;
+            transition: all 0.15s ease;
+            text-transform: uppercase;
+        }
+
+        /* Clear button — turns red on hover */
+        .btn-clear {
+            border-color: var(--text-dim);
+            color: var(--text-dim);
+            background: transparent;
+        }
+
+        .btn-clear:hover {
+            border-color: var(--red);
+            color: var(--red);
+            background: rgba(255,59,59,0.05);
+        }
+
+        /* Send button — glows green on hover */
+        .btn-send {
+            border-color: var(--green-dim);
+            color: var(--green);
+            background: rgba(0,255,65,0.05);
+        }
+
+        .btn-send:hover {
+            background: rgba(0,255,65,0.12);
+            box-shadow: 0 0 12px rgba(0,255,65,0.2);
+        }
+
+        .btn-send:active {
+            transform: scale(0.97); /* Slight press-down effect on click */
+        }
+
+        /* ══════════════════════════════════════════
+           BOX 3 — MORSE REFERENCE KEYPAD
+           Shows all letters/numbers and their Morse
+           codes. Filters in real time as the user types.
+           ══════════════════════════════════════════ */
+        .keypad-panel {
+            height: 260px;
+        }
+
+        .keypad-panel .panel-body {
+            flex: 1;
+            padding: 12px;
+            overflow-y: auto;
+            height: calc(260px - 41px);
+        }
+
+        .keypad-panel .panel-body::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .keypad-panel .panel-body::-webkit-scrollbar-thumb {
+            background: var(--border);
+        }
+
+        /* Grid that auto-fills columns based on available width */
+        .keypad-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+            gap: 6px;
+        }
+
+        /* Individual letter/number tile in the keypad */
+        .key-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 4px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            background: var(--bg);
+            transition: all 0.15s ease;
+            cursor: default;
+        }
+
+        /* Active tiles — ones that still match what the user has typed */
+        .key-item.active {
+            border-color: var(--green);
+            background: rgba(0,255,65,0.07);
+            box-shadow: 0 0 10px rgba(0,255,65,0.1);
+        }
+
+        /* Faded tiles — ones that no longer match and are dimmed out */
+        .key-item.faded {
+            opacity: 0.15;
+            border-color: var(--border);
+            background: transparent;
+        }
+
+        /* The large letter/number on each keypad tile */
+        .key-char {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--green);
+        }
+
+        .key-item.faded .key-char {
+            color: var(--text-dim);
+        }
+
+        /* The Morse code shown below each letter (e.g. ".-" for A) */
+        .key-morse {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            margin-top: 3px;
+            letter-spacing: 0.1em;
+        }
+
+        .key-item.active .key-morse {
+            color: var(--green-dim);
+        }
+
+        /* ══════════════════════════════════════════
+           RESPONSIVE
+           On small screens, shrink the keypad tiles
+           so they still fit.
+           ══════════════════════════════════════════ */
+        @media (max-width: 768px) {
+            .keypad-grid {
+                grid-template-columns: repeat(auto-fill, minmax(55px, 1fr));
+            }
+        }
+
+    </style>
 </head>
 <body>
-    <div style="text-align: center; background-color: #f2f2f2; padding: 20px; border-bottom: 2px solid #ccc;">
-        <h1 style="margin: 0;">Morse Code Chat</h1>
-        <img alt="Morse Code" style="max-width: 100%; height: auto; margin-top: 10px;">
+
+<!-- ══════════════════════════════════════════
+     HEADER
+     Top bar with app title and live status indicators.
+     ══════════════════════════════════════════ -->
+<header>
+    <div class="header-title">
+        <h1>MORSE CODE CHAT</h1>
+        <span class="header-subtitle">Emergency Communication System</span>
     </div>
-    <p>Translated Message: <span id="messageList">
-        {% for record in records %}
-        <li style="background-color: {{ record.color }}; padding: 10px; margin: 5px;">
-            <strong>{{ record.input_string }}:</strong> {{ record.message }}
-        </li>
-        {% endfor %}
-    </span></p>
-    <textarea id="messageBox" rows="10" cols="150" placeholder="Please enter the morse code" autofocus style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.12); font-size: 16px; resize: vertical;"></textarea>
-    <script>
-        
-    
+    <div class="header-status">
+        <!-- Connection dot and label — updated by JavaScript when Socket.IO connects/disconnects -->
+        <span>
+            <span class="status-dot" id="connectionDot"></span>
+            <span id="connectionLabel">Connecting...</span>
+        </span>
+        <!-- Location status — updated by JavaScript after the browser asks for permission -->
+        <span class="location-status" id="locationStatus">⊙ Location: Pending</span>
+    </div>
+</header>
+
+<main>
+
+    <!-- ══════════════════════════════════════════
+         BOX 1 — INCOMING TRANSMISSIONS
+         Scrollable feed showing all received messages
+         with timestamps, sender info, and coordinates.
+         ══════════════════════════════════════════ -->
+    <div class="panel messages-panel">
+        <div class="panel-header">
+            <span class="panel-label">⬡ Incoming Transmissions</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <!-- Live message counter (e.g. "3 messages") -->
+                <span class="panel-badge" id="messageCount">0 messages</span>
+                <!-- Clears the feed visually (does not delete from MongoDB) -->
+                <button class="btn btn-clear" id="clearFeedBtn">Clear</button>
+            </div>
+        </div>
+        <!-- Messages are inserted here dynamically by JavaScript -->
+        <div class="panel-body" id="messageList">
+            <span class="no-messages" id="noMessagesLabel">[ NO TRANSMISSIONS LOGGED ]</span>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         BOX 2 — TRANSMIT
+         Morse code input area. Only accepts K (dot),
+         L (dash), Space (letter separator),
+         Backspace (delete), and Enter (send).
+         ══════════════════════════════════════════ -->
+    <div class="panel input-panel">
+        <div class="panel-header">
+            <span class="panel-label">⬡ Transmit</span>
+            <!-- Shows how many characters have been typed -->
+            <span class="panel-badge" id="morseLength">0 chars</span>
+        </div>
+        <div class="panel-body">
+            <!-- Instructions for the user -->
+            <div class="input-directions">
+                USE <span>[K]</span> for dot &nbsp;·&nbsp;
+                <span>[L]</span> for dash &nbsp;·&nbsp;
+                <span>[SPACE]</span> to separate letters &nbsp;·&nbsp;
+                <span>[BACKSPACE]</span> to delete &nbsp;·&nbsp;
+                <span>[ENTER]</span> to send
+            </div>
+            <!-- Warning shown when an invalid key is pressed — hidden by default -->
+            <div class="input-warning" id="inputWarning">
+                ⚠ INVALID KEY — Use only K, L, Space, Backspace, or Enter
+            </div>
+            <div class="morse-input-area">
+                <!-- The Morse code display area. tabindex="0" makes it focusable so it can receive keyboard events -->
+                <div class="morse-display" id="morseDisplay" tabindex="0">
+                    <span id="morseText"></span>
+                    <span class="morse-cursor"></span> <!-- Blinking cursor -->
+                </div>
+                <div class="input-actions">
+                    <!-- Hint text that changes between "Start typing..." and "Press Enter to send" -->
+                    <span class="morse-length" id="morseHint">Start typing with K and L keys...</span>
+                    <button class="btn btn-clear" id="clearBtn">Clear</button>
+                    <button class="btn btn-send" id="sendBtn">Send ▶</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         BOX 3 — MORSE REFERENCE KEYPAD
+         Shows all 36 characters (A-Z, 0-9) with their
+         Morse codes. Filters down as the user types,
+         highlighting only the letters that still match
+         the current sequence of dots and dashes.
+         ══════════════════════════════════════════ -->
+    <div class="panel keypad-panel">
+        <div class="panel-header">
+            <span class="panel-label">⬡ Morse Reference Keypad</span>
+            <!-- Shows how many letters still match what the user has typed -->
+            <span class="panel-badge" id="matchCount">36 matches</span>
+        </div>
+        <div class="panel-body">
+            <!-- Keypad tiles are generated dynamically by JavaScript using the MORSE_DICT -->
+            <div class="keypad-grid" id="keypadGrid"></div>
+        </div>
+    </div>
+
+</main>
+
+<script>
+
+    // ══════════════════════════════════════════
+    // MORSE CODE DICTIONARY
+    // Maps each letter/number to its Morse code.
+    // Used to build the keypad and filter tiles
+    // as the user types.
+    // ══════════════════════════════════════════
+    const MORSE_DICT = {
+        'A':'.-','B':'-...','C':'-.-.','D':'-..','E':'.','F':'..-.','G':'--.','H':'....','I':'..','J':'.---',
+        'K':'-.-','L':'.-..','M':'--','N':'-.','O':'---','P':'.--.','Q':'--.-','R':'.-.','S':'...','T':'-',
+        'U':'..-','V':'...-','W':'.--','X':'-..-','Y':'-.--','Z':'--..',
+        '0':'-----','1':'.----','2':'..---','3':'...--','4':'....-','5':'.....','6':'-....','7':'--...','8':'---..',
+        '9':'----.'
+    };
+
+    // ══════════════════════════════════════════
+    // STATE VARIABLES
+    // These track what the user has typed so far.
+    // ══════════════════════════════════════════
+    let morseMessage = '';       // The full Morse string being composed (e.g. "... --- ...")
+    let currentLetterSeq = '';   // Just the dots/dashes since the last space (used to filter the keypad)
+    let userLocation = null;     // Stores { latitude, longitude } if the user grants permission
+    let warningTimer = null;     // Tracks the timeout for hiding the invalid key warning
+    let messageCount = 0;        // Tracks how many messages are in the feed
+
+    // ══════════════════════════════════════════
+    // SOCKET.IO CONNECTION
+    // Connects to the Flask server on the same
+    // host and port as the webpage.
+    // ══════════════════════════════════════════
     const socket = io.connect('http://' + document.domain + ':' + location.port);
 
-        let message = '';
-        let isListening = false;
+    const connectionDot = document.getElementById('connectionDot');
+    const connectionLabel = document.getElementById('connectionLabel');
 
-        document.addEventListener('DOMContentLoaded', (event) => {
-    const socket = io.connect('http://' + document.domain + ':' + location.port);
-    let isListening = false;
-    let message = '';
+    // When the Socket.IO connection is established:
+    socket.on('connect', function () {
+        // Update the header dot and label to show "Connected"
+        connectionDot.classList.add('connected');
+        connectionLabel.textContent = 'Connected';
 
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'j') {
-            console.log('J key pressed');
-            if (!isListening) {
-                isListening = true;
-                message = '';
-                console.log('Started listening for k and l');
-            } else {
-                isListening = false;
-                console.log('Message:', message);
-                socket.emit('/message', message);
-                message = '';  // Clear the message after sending
-                console.log('Stopped listening and cleared message');
+        // Call /connect to get or create a user ID cookie,
+        // then load all existing messages from MongoDB
+        fetch('/connect', { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(() => fetchAllMessages())
+            .catch(console.error);
+    });
+
+    // When the Socket.IO connection is lost:
+    socket.on('disconnect', function () {
+        connectionDot.classList.remove('connected');
+        connectionLabel.textContent = 'Disconnected';
+    });
+
+    // When the server broadcasts a new message to all clients,
+    // add it to the feed immediately without refreshing the page
+    socket.on('/new_message', function (msg) {
+        appendMessage(msg);
+    });
+
+    // ══════════════════════════════════════════
+    // FETCH ALL MESSAGES
+    // Called once on connect to populate the feed
+    // with any messages already stored in MongoDB.
+    // ══════════════════════════════════════════
+    function fetchAllMessages() {
+        fetch('/full_messages', { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(messages => {
+                const list = document.getElementById('messageList');
+                list.innerHTML = '';
+                if (messages.length === 0) {
+                    // Show placeholder text if no messages exist yet
+                    list.innerHTML = '<span class="no-messages" id="noMessagesLabel">[ NO TRANSMISSIONS LOGGED ]</span>';
+                    return;
+                }
+                // Add each message to the feed
+                messages.forEach(appendMessage);
+            })
+            .catch(console.error);
+    }
+
+    // ══════════════════════════════════════════
+    // APPEND MESSAGE TO FEED
+    // Builds and inserts a message row into Box 1.
+    // Called both when loading history and when
+    // receiving a new real-time message.
+    // ══════════════════════════════════════════
+    function appendMessage(msg) {
+        // Remove the "no messages" placeholder if it's still showing
+        const noMsg = document.getElementById('noMessagesLabel');
+        if (noMsg) noMsg.remove();
+
+        // Increment and update the message counter in the panel header
+        messageCount++;
+        document.getElementById('messageCount').textContent = messageCount + ' message' + (messageCount !== 1 ? 's' : '');
+
+        const list = document.getElementById('messageList');
+        const item = document.createElement('div');
+
+        // ESP32 messages get a special amber style, browser messages get the default green
+        const isESP32 = msg.rescuer === 'esp32_glove';
+        item.className = 'message-item' + (isESP32 ? ' esp32' : '');
+
+        // Colored dot representing the sender (color assigned by Flask based on user ID)
+        const dot = document.createElement('div');
+        dot.className = 'message-color-tag';
+        dot.style.backgroundColor = msg.color || (isESP32 ? '#ffb700' : '#00ff41');
+
+        const content = document.createElement('div');
+        content.className = 'message-content';
+
+        // Format the timestamp — use the stored time or fall back to now
+        const timeStr = msg.time ? new Date(msg.time).toLocaleTimeString() : new Date().toLocaleTimeString();
+
+        // Show "ESP32 Glove" or a shortened version of the user's UUID
+        const sender = isESP32 ? 'ESP32 Glove' : ('User ' + (msg.rescuer ? msg.rescuer.substring(0, 8) : ''));
+
+        // Build the message HTML — show coordinates only if location was captured
+        content.innerHTML = `
+            <div class="message-text">${escapeHtml(msg.message)}</div>
+            <div class="message-meta">
+                <span>⏱ ${timeStr}</span>
+                <span>▸ ${sender}</span>
+                ${msg.latitude ? `<span>📍 ${parseFloat(msg.latitude).toFixed(4)}, ${parseFloat(msg.longitude).toFixed(4)}</span>` : ''}
+            </div>
+        `;
+
+        item.appendChild(dot);
+        item.appendChild(content);
+        list.appendChild(item);
+
+        // Auto-scroll to the bottom so the newest message is always visible
+        list.scrollTop = list.scrollHeight;
+    }
+
+    // Prevents special characters from breaking the HTML when displayed
+    function escapeHtml(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ══════════════════════════════════════════
+    // GEOLOCATION
+    // Asks the browser for the user's location
+    // when the page loads. The result is stored
+    // and attached to messages when they are sent.
+    // ══════════════════════════════════════════
+    const locationStatus = document.getElementById('locationStatus');
+
+    function requestLocation() {
+        if (!navigator.geolocation) {
+            // Browser doesn't support geolocation at all
+            locationStatus.textContent = '⊙ Location: Not Supported';
+            locationStatus.className = 'location-status denied';
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            // Success: store coordinates and show them in the header
+            pos => {
+                userLocation = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+                locationStatus.textContent = `⊙ Location: ${userLocation.latitude.toFixed(3)}, ${userLocation.longitude.toFixed(3)}`;
+                locationStatus.className = 'location-status granted';
+            },
+            // Error: user denied permission or location unavailable
+            err => {
+                locationStatus.textContent = '⊙ Location: Denied';
+                locationStatus.className = 'location-status denied';
             }
-        } else if (isListening) {
-            if (event.key === 'k') {
-                message += '.';
-            } else if (event.key === 'l') {
-                message += '-';
-            } else if (event.key === ' ') {
-                message += ' ';
+        );
+    }
+
+    // Ask for location as soon as the page loads
+    requestLocation();
+
+    // ══════════════════════════════════════════
+    // MORSE INPUT — KEYBOARD HANDLER
+    // Listens for key presses on the Morse display
+    // div and only allows K, L, Space, Backspace,
+    // Enter, and Ctrl shortcuts.
+    // ══════════════════════════════════════════
+    const morseDisplay = document.getElementById('morseDisplay');
+    const morseText = document.getElementById('morseText');
+    const inputWarning = document.getElementById('inputWarning');
+    const morseHint = document.getElementById('morseHint');
+
+    // Only these keys are allowed — anything else triggers a warning
+    const ALLOWED_KEYS = new Set(['k', 'l', ' ', 'backspace', 'enter', 'control']);
+
+    morseDisplay.addEventListener('keydown', function(e) {
+        const key = e.key.toLowerCase();
+
+        // Always allow Ctrl key and Ctrl+C / Ctrl+V (copy and paste)
+        // Returning early means we don't call preventDefault,
+        // so the browser's default copy/paste behavior works normally
+        if (key === 'control' || (e.ctrlKey && (key === 'c' || key === 'v'))) {
+            return;
+        }
+
+        // Block any key not in the allowed list and show a warning
+        if (!ALLOWED_KEYS.has(key)) {
+            e.preventDefault();
+            showWarning();
+            return;
+        }
+
+        // Prevent default browser behavior for allowed keys
+        // (e.g. stops Space from scrolling the page)
+        e.preventDefault();
+
+        if (key === 'k') {
+            // K = dot
+            morseMessage += '.';
+            currentLetterSeq += '.';
+        } else if (key === 'l') {
+            // L = dash
+            morseMessage += '-';
+            currentLetterSeq += '-';
+        } else if (key === ' ') {
+            // Space = letter separator. Only add if the last character isn't already a space
+            if (morseMessage.length > 0 && morseMessage[morseMessage.length - 1] !== ' ') {
+                morseMessage += ' ';
+                currentLetterSeq = ''; // Reset current letter sequence after space
             }
-            console.log('Current message:', message);
+        } else if (key === 'backspace') {
+            // Remove the last character and recalculate the current letter sequence
+            if (morseMessage.length > 0) {
+                morseMessage = morseMessage.slice(0, -1);
+                // Find the last space to know where the current letter starts
+                const lastSpace = morseMessage.lastIndexOf(' ');
+                currentLetterSeq = lastSpace === -1 ? morseMessage : morseMessage.substring(lastSpace + 1);
+            }
+        } else if (key === 'enter') {
+            // Send the message
+            sendMessage();
+            return;
+        }
+
+        // Refresh the display and keypad after every key press
+        updateMorseDisplay();
+        updateKeypad(currentLetterSeq);
+    });
+
+    // ══════════════════════════════════════════
+    // PASTE HANDLER
+    // The morse display is a div, not an input,
+    // so paste doesn't work automatically.
+    // We handle it manually and filter out any
+    // characters that aren't valid Morse (dots, dashes, spaces).
+    // ══════════════════════════════════════════
+    morseDisplay.addEventListener('paste', function(e) {
+        e.preventDefault();
+        const pasted = (e.clipboardData || window.clipboardData).getData('text');
+        // Strip everything except dots, dashes, and spaces
+        const filtered = pasted.replace(/[^.\- ]/g, '');
+        if (filtered) {
+            morseMessage += filtered;
+            // Recalculate the current letter sequence after pasting
+            const lastSpace = morseMessage.lastIndexOf(' ');
+            currentLetterSeq = lastSpace === -1 ? morseMessage : morseMessage.substring(lastSpace + 1);
+            updateMorseDisplay();
+            updateKeypad(currentLetterSeq);
         }
     });
-});
 
-        document.addEventListener('DOMContentLoaded', (event) => {
-    const socket = io.connect('http://' + document.domain + ':' + location.port);
+    // Shows the invalid key warning for 2 seconds then hides it
+    function showWarning() {
+        inputWarning.style.display = 'block';
+        if (warningTimer) clearTimeout(warningTimer); // Reset timer if already showing
+        warningTimer = setTimeout(() => {
+            inputWarning.style.display = 'none';
+        }, 2000);
+    }
 
-    socket.on('connect', function () {
-        fetch('/connect', { credentials: 'same-origin' })  // Ensure cookies are sent
-            .then(response => response.json())
-            .then(data => {
-                console.log('User connected:', data.message);
-                fetchAllMessages();  // Fetch all messages on connect
-                // setInterval(pollForNewMessages, 5000);  // Continue polling for new messages
-            })
-            .catch(error => {
-                console.error('Error on connect:', error);
-            });
+    // Updates the text in the Morse display div and the character count/hint
+    function updateMorseDisplay() {
+        morseText.textContent = morseMessage;
+        const len = morseMessage.length;
+        document.getElementById('morseLength').textContent = len + ' char' + (len !== 1 ? 's' : '');
+        morseHint.textContent = len > 0 ? 'Press Enter to send' : 'Start typing with K and L keys...';
+    }
+
+    // ══════════════════════════════════════════
+    // SEND MESSAGE
+    // Emits the Morse string to Flask via Socket.IO.
+    // Also attaches the user's coordinates if
+    // location permission was granted.
+    // ══════════════════════════════════════════
+    function sendMessage() {
+        const msg = morseMessage.trim();
+        if (!msg) return; // Don't send empty messages
+
+        // Build the payload with the Morse string
+        const payload = { morse: msg };
+
+        // Attach location data if available
+        if (userLocation) {
+            payload.latitude = userLocation.latitude;
+            payload.longitude = userLocation.longitude;
+        }
+
+        // Send the payload to Flask via the /message Socket.IO event
+        socket.emit('/message', payload);
+
+        // Reset the input area after sending
+        morseMessage = '';
+        currentLetterSeq = '';
+        updateMorseDisplay();
+        updateKeypad('');
+    }
+
+    // Send button click
+    document.getElementById('sendBtn').addEventListener('click', sendMessage);
+
+    // Clear button — resets the input without sending
+    document.getElementById('clearBtn').addEventListener('click', function() {
+        morseMessage = '';
+        currentLetterSeq = '';
+        updateMorseDisplay();
+        updateKeypad('');
+        morseDisplay.focus();
     });
-});
 
-// Function to fetch all messages
-function fetchAllMessages() {
-    fetch('/full_messages', { credentials: 'same-origin' })  // Ensure cookies are sent
-        .then(response => response.json())
-        .then(messages => {
-            console.log('All messages on connect:', messages);
-            const messageList = document.getElementById('messageList');
-            messageList.innerHTML = ''; // Clear the message list before appending new messages
-            messages.forEach(message => {
-                const newListItem = document.createElement('li');
-                newListItem.style.backgroundColor = message.color;
-                newListItem.style.padding = '10px';
-                newListItem.style.margin = '5px';
-                newListItem.innerHTML = `<strong>${message.color}</strong> ${message.message}`;
-                messageList.appendChild(newListItem);
-            });
-        })
-        .catch(error => {
-            console.error('Error fetching messages on connect:', error);
+    // Clicking anywhere in the input panel focuses the Morse display
+    // so the user can start typing immediately
+    document.querySelector('.input-panel').addEventListener('click', () => morseDisplay.focus());
+
+    // ══════════════════════════════════════════
+    // MORSE KEYPAD — BUILD
+    // Generates a tile for every character in
+    // MORSE_DICT and inserts them into the grid.
+    // ══════════════════════════════════════════
+    const keypadGrid = document.getElementById('keypadGrid');
+    const matchCount = document.getElementById('matchCount');
+
+    function buildKeypad() {
+        keypadGrid.innerHTML = '';
+        Object.entries(MORSE_DICT).forEach(([char, morse]) => {
+            const item = document.createElement('div');
+            item.className = 'key-item';
+            item.dataset.char = char;   // Store the letter (e.g. "S")
+            item.dataset.morse = morse; // Store the Morse code (e.g. "...")
+            item.innerHTML = `<span class="key-char">${char}</span><span class="key-morse">${morse}</span>`;
+            keypadGrid.appendChild(item);
         });
-}
+    }
 
-socket.on('/new_message', function(msg) {
-     const newListItem = document.createElement('li');
-                    newListItem.style.backgroundColor = msg.color;
-                    newListItem.style.padding = '10px';
-                    newListItem.style.margin = '5px';
-                    newListItem.innerHTML = `<strong>${msg.color}:</strong> ${msg.message}`;
-                    messageList.appendChild(newListItem);
-            });
+    // ══════════════════════════════════════════
+    // MORSE KEYPAD — FILTER
+    // Called every time the user types a key.
+    // Highlights tiles whose Morse code starts
+    // with the current sequence, and fades out
+    // the ones that no longer match.
+    // ══════════════════════════════════════════
+    function updateKeypad(seq) {
+        const items = keypadGrid.querySelectorAll('.key-item');
+        let activeCount = 0;
 
-// this function is retired becuase, ot used to clog the terminal and is replaced by the above function
-function pollForNewMessages() {
-    fetch('/new_messages', { credentials: 'same-origin' })  // Ensure cookies are sent
-        .then(response => response.json())
-        .then(messages => {
-            console.log('New messages:', messages);
-            if (messages && messages.length > 0) {
-                const messageList = document.getElementById('messageList');
-                messages.forEach(message => {
-                    const newListItem = document.createElement('li');
-                    newListItem.style.backgroundColor = message.color;
-                    newListItem.style.padding = '10px';
-                    newListItem.style.margin = '5px';
-                    newListItem.innerHTML = `<strong>${message.color}:</strong> ${message.message}`;
-                    messageList.appendChild(newListItem);
-
-                });
+        items.forEach(item => {
+            const morse = item.dataset.morse;
+            if (seq === '') {
+                // No input yet — show all tiles equally
+                item.classList.remove('faded', 'active');
+                activeCount++;
+            } else if (morse.startsWith(seq)) {
+                // This tile still matches — highlight it
+                item.classList.remove('faded');
+                item.classList.add('active');
+                activeCount++;
+            } else {
+                // This tile no longer matches — dim it
+                item.classList.add('faded');
+                item.classList.remove('active');
             }
-        })
-        .catch(error => {
-            console.error('Error fetching new messages:', error);
         });
-}
 
+        // Update the match counter in the keypad panel header
+        matchCount.textContent = activeCount + ' match' + (activeCount !== 1 ? 'es' : '');
+    }
 
-    </script>
-    
+    // Build the keypad once on page load and show all tiles
+    buildKeypad();
+    updateKeypad('');
+
+    // ══════════════════════════════════════════
+    // CLEAR FEED BUTTON
+    // Wipes the message list visually.
+    // Does NOT delete anything from MongoDB.
+    // ══════════════════════════════════════════
+    document.getElementById('clearFeedBtn').addEventListener('click', function() {
+        const list = document.getElementById('messageList');
+        list.innerHTML = '<span class="no-messages" id="noMessagesLabel">[ NO TRANSMISSIONS LOGGED ]</span>';
+        messageCount = 0;
+        document.getElementById('messageCount').textContent = '0 messages';
+    });
+
+    // Auto-focus the Morse input when the page finishes loading
+    window.addEventListener('load', () => morseDisplay.focus());
+
+</script>
+
 </body>
 </html>
