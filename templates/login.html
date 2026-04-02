@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MORSE CODE CHAT // ACCESS TERMINAL</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --green: #00ff41;
+            --green-dim: #00a82b;
+            --green-dark: #004010;
+            --green-glow: rgba(0, 255, 65, 0.2);
+            --bg: #020602;
+            --panel: #060d06;
+            --border: #0f200f;
+            --border-bright: #1a3a1a;
+            --red: #ff3b3b;
+            --amber: #ffb700;
+            --dim: #2a4a2a;
+            --text-dim: #3a6a3a;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--green);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* ── ANIMATED RADAR GRID BACKGROUND ── */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,65,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,65,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: gridDrift 20s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes gridDrift {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(40px); }
+        }
+
+        /* ── RADAR SWEEP ── */
+        .radar-container {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .radar {
+            width: 900px;
+            height: 900px;
+            border-radius: 50%;
+            border: 1px solid rgba(0,255,65,0.04);
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .radar::before,
+        .radar::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            border: 1px solid rgba(0,255,65,0.04);
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .radar::before { width: 60%; height: 60%; }
+        .radar::after { width: 30%; height: 30%; }
+
+        .radar-line {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 50%;
+            height: 1px;
+            transform-origin: left center;
+            background: linear-gradient(90deg, rgba(0,255,65,0.6), transparent);
+            animation: radarSweep 6s linear infinite;
+            box-shadow: 0 0 8px rgba(0,255,65,0.4);
+        }
+
+        @keyframes radarSweep {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Radar glow trail */
+        .radar-glow {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: conic-gradient(
+                from 0deg,
+                transparent 0deg,
+                rgba(0,255,65,0.06) 30deg,
+                transparent 60deg
+            );
+            animation: radarSweep 6s linear infinite;
+        }
+
+        /* ── CRT SCANLINES ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0,0,0,0.12) 2px,
+                rgba(0,0,0,0.12) 4px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* ── VIGNETTE ── */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center,
+                transparent 40%,
+                rgba(0,0,0,0.7) 100%
+            );
+            pointer-events: none;
+            z-index: 9998;
+        }
+
+        /* ── NOISE TEXTURE ── */
+        .noise {
+            position: fixed;
+            inset: 0;
+            opacity: 0.025;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 9997;
+        }
+
+        /* ── BOOT TEXT ── */
+        .boot-sequence {
+            position: fixed;
+            top: 20px;
+            left: 24px;
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            line-height: 1.8;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .boot-line {
+            opacity: 0;
+            animation: bootReveal 0.1s forwards;
+            white-space: nowrap;
+        }
+
+        .boot-line:nth-child(1)  { animation-delay: 0.2s; }
+        .boot-line:nth-child(2)  { animation-delay: 0.5s; }
+        .boot-line:nth-child(3)  { animation-delay: 0.9s; }
+        .boot-line:nth-child(4)  { animation-delay: 1.3s; }
+        .boot-line:nth-child(5)  { animation-delay: 1.7s; }
+        .boot-line:nth-child(6)  { animation-delay: 2.1s; }
+
+        @keyframes bootReveal {
+            to { opacity: 1; }
+        }
+
+        .boot-ok { color: var(--green-dim); }
+        .boot-warn { color: var(--amber); }
+
+        /* ── CORNER DECORATIONS ── */
+        .corner {
+            position: fixed;
+            width: 60px;
+            height: 60px;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .corner::before,
+        .corner::after {
+            content: '';
+            position: absolute;
+            background: var(--green-dim);
+        }
+
+        .corner::before { width: 100%; height: 2px; }
+        .corner::after  { width: 2px; height: 100%; }
+
+        .corner-tl { top: 16px; left: 16px; }
+        .corner-tr { top: 16px; right: 16px; transform: scaleX(-1); }
+        .corner-bl { bottom: 16px; left: 16px; transform: scaleY(-1); }
+        .corner-br { bottom: 16px; right: 16px; transform: scale(-1); }
+
+        /* ── MAIN TERMINAL PANEL ── */
+        .terminal {
+            position: relative;
+            z-index: 200;
+            width: 520px;
+            background: var(--panel);
+            border: 1px solid var(--border-bright);
+            box-shadow:
+                0 0 0 1px var(--border),
+                0 0 40px rgba(0,255,65,0.08),
+                0 0 80px rgba(0,255,65,0.04),
+                inset 0 1px 0 rgba(0,255,65,0.05);
+            animation: terminalAppear 0.6s ease 2.5s both;
+        }
+
+        @keyframes terminalAppear {
+            from { opacity: 0; transform: translateY(20px) scale(0.98); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* Terminal title bar */
+        .terminal-titlebar {
+            background: rgba(0,255,65,0.04);
+            border-bottom: 1px solid var(--border-bright);
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .terminal-title {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.25em;
+            color: var(--text-dim);
+        }
+
+        .terminal-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .terminal-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--border-bright);
+        }
+
+        .terminal-dot:first-child { background: var(--red); opacity: 0.5; }
+        .terminal-dot:nth-child(2) { background: var(--amber); opacity: 0.5; }
+        .terminal-dot:last-child { background: var(--green-dim); opacity: 0.5; }
+
+        /* Terminal body */
+        .terminal-body {
+            padding: 28px 32px 32px;
+        }
+
+        /* ── APP LOGO / HEADER ── */
+        .app-logo {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .app-logo-icon {
+            font-size: 2.2rem;
+            margin-bottom: 8px;
+            display: block;
+            filter: drop-shadow(0 0 12px var(--green));
+            animation: iconPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes iconPulse {
+            0%, 100% { filter: drop-shadow(0 0 12px rgba(0,255,65,0.6)); }
+            50% { filter: drop-shadow(0 0 24px rgba(0,255,65,1)); }
+        }
+
+        .app-logo h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.3rem;
+            font-weight: 900;
+            letter-spacing: 0.2em;
+            text-shadow: 0 0 20px var(--green), 0 0 40px rgba(0,255,65,0.3);
+        }
+
+        .app-logo p {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            letter-spacing: 0.3em;
+            margin-top: 4px;
+            text-transform: uppercase;
+        }
+
+        /* ── TAB SWITCHER (Login / Register) ── */
+        .tab-row {
+            display: flex;
+            border: 1px solid var(--border-bright);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.78rem;
+            letter-spacing: 0.15em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+        }
+
+        .tab-btn.active {
+            background: rgba(0,255,65,0.08);
+            color: var(--green);
+            box-shadow: inset 0 -2px 0 var(--green);
+        }
+
+        .tab-btn:hover:not(.active) {
+            background: rgba(0,255,65,0.03);
+            color: var(--green-dim);
+        }
+
+        /* ── FORM ── */
+        .form-panel {
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-panel.active {
+            display: flex;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .field label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+        }
+
+        .field input[type="text"],
+        .field input[type="password"] {
+            background: var(--bg);
+            border: 1px solid var(--border-bright);
+            border-radius: 3px;
+            padding: 10px 14px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.92rem;
+            color: var(--green);
+            outline: none;
+            transition: all 0.2s ease;
+            letter-spacing: 0.08em;
+        }
+
+        .field input:focus {
+            border-color: var(--green-dim);
+            box-shadow: 0 0 12px rgba(0,255,65,0.1), inset 0 0 8px rgba(0,255,65,0.03);
+        }
+
+        .field input::placeholder {
+            color: var(--dim);
+        }
+
+        /* ── COLOR PICKER ROW ── */
+        .color-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .color-row label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+        }
+
+        .color-swatches {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .swatch {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+
+        .swatch:hover {
+            transform: scale(1.15);
+        }
+
+        .swatch.selected {
+            border-color: white;
+            box-shadow: 0 0 10px rgba(255,255,255,0.4);
+            transform: scale(1.15);
+        }
+
+        /* Hidden actual color input for custom color */
+        .swatch-custom {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px dashed var(--border-bright);
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            transition: all 0.15s ease;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .swatch-custom:hover {
+            border-color: var(--green-dim);
+            color: var(--green);
+            transform: scale(1.15);
+        }
+
+        .swatch-custom input[type="color"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ── PIN DOTS ── */
+        .pin-display {
+            display: flex;
+            gap: 10px;
+            margin-top: 2px;
+        }
+
+        .pin-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 1px solid var(--border-bright);
+            background: transparent;
+            transition: all 0.15s ease;
+        }
+
+        .pin-dot.filled {
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green);
+            border-color: var(--green);
+        }
+
+        /* ── SUBMIT BUTTON ── */
+        .submit-btn {
+            margin-top: 4px;
+            padding: 13px;
+            background: rgba(0,255,65,0.06);
+            border: 1px solid var(--green-dim);
+            border-radius: 3px;
+            color: var(--green);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.88rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .submit-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(0,255,65,0.08), transparent);
+            transform: translateX(-100%);
+            transition: transform 0.4s ease;
+        }
+
+        .submit-btn:hover {
+            background: rgba(0,255,65,0.12);
+            box-shadow: 0 0 20px rgba(0,255,65,0.2);
+        }
+
+        .submit-btn:hover::before {
+            transform: translateX(100%);
+        }
+
+        .submit-btn:active {
+            transform: scale(0.98);
+        }
+
+        /* ── ERROR / SUCCESS MESSAGE ── */
+        .msg {
+            font-size: 0.75rem;
+            padding: 8px 12px;
+            border-radius: 3px;
+            letter-spacing: 0.05em;
+            display: none;
+        }
+
+        .msg.error {
+            color: var(--red);
+            border: 1px solid var(--red);
+            background: rgba(255,59,59,0.05);
+            display: block;
+        }
+
+        .msg.success {
+            color: var(--green);
+            border: 1px solid var(--green-dim);
+            background: rgba(0,255,65,0.05);
+            display: block;
+        }
+
+        /* ── BOTTOM STATUS BAR ── */
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--panel);
+            border-top: 1px solid var(--border-bright);
+            padding: 6px 20px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            z-index: 200;
+        }
+
+        .status-bar-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* ── TYPING CURSOR ── */
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 1em;
+            background: var(--green);
+            vertical-align: middle;
+            margin-left: 2px;
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Input hint */
+        .field-hint {
+            font-size: 0.65rem;
+            color: var(--dim);
+            letter-spacing: 0.05em;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Animated grid background -->
+<div class="bg-grid"></div>
+
+<!-- Noise texture overlay -->
+<div class="noise"></div>
+
+<!-- Radar sweep effect -->
+<div class="radar-container">
+    <div class="radar">
+        <div class="radar-glow"></div>
+        <div class="radar-line"></div>
+    </div>
+</div>
+
+<!-- Corner decorations -->
+<div class="corner corner-tl"></div>
+<div class="corner corner-tr"></div>
+<div class="corner corner-bl"></div>
+<div class="corner corner-br"></div>
+
+<!-- Boot sequence text (top left) -->
+<div class="boot-sequence">
+    <div class="boot-line">MORSE COMM SYSTEM v2.1.0 — INITIALIZING...</div>
+    <div class="boot-line">CHECKING HARDWARE INTERFACES... <span class="boot-ok">OK</span></div>
+    <div class="boot-line">LOADING ENCRYPTION MODULES... <span class="boot-ok">OK</span></div>
+    <div class="boot-line">ESTABLISHING SECURE CHANNEL... <span class="boot-ok">OK</span></div>
+    <div class="boot-line">MONGODB CONNECTION... <span class="boot-ok">ONLINE</span></div>
+    <div class="boot-line">AWAITING OPERATOR AUTHENTICATION <span class="cursor"></span></div>
+</div>
+
+<!-- Main terminal panel -->
+<div class="terminal">
+    <div class="terminal-titlebar">
+        <span class="terminal-title">SECURE ACCESS TERMINAL</span>
+        <div class="terminal-dots">
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+        </div>
+    </div>
+    <div class="terminal-body">
+
+        <!-- Logo -->
+        <div class="app-logo">
+            <span class="app-logo-icon">⬡</span>
+            <h1>MORSE CODE CHAT</h1>
+            <p>Emergency Communication System</p>
+        </div>
+
+        <!-- Tab switcher -->
+        <div class="tab-row">
+            <button class="tab-btn active" onclick="switchTab('login')">⬡ LOGIN</button>
+            <button class="tab-btn" onclick="switchTab('register')">⬡ CREATE ACCOUNT</button>
+        </div>
+
+        <!-- Error/success message (shared) -->
+        <div class="msg" id="authMsg"></div>
+
+        <!-- ── LOGIN FORM ── -->
+        <div class="form-panel active" id="loginForm">
+            <div class="field">
+                <label>Operator Username</label>
+                <input type="text" id="loginUsername" placeholder="Enter username" autocomplete="off" maxlength="32">
+            </div>
+            <div class="field">
+                <label>PIN</label>
+                <input type="password" id="loginPin" placeholder="Enter PIN" maxlength="6" inputmode="numeric">
+                <div class="pin-display" id="loginPinDots">
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                </div>
+            </div>
+            <button class="submit-btn" onclick="handleLogin()">▶ AUTHENTICATE</button>
+        </div>
+
+        <!-- ── REGISTER FORM ── -->
+        <div class="form-panel" id="registerForm">
+            <div class="field">
+                <label>Choose Username</label>
+                <input type="text" id="regUsername" placeholder="Min. 2 characters" autocomplete="off" minlength="2" maxlength="32">
+                <span class="field-hint">Initials (e.g. CG) or full name accepted</span>
+            </div>
+            <div class="field">
+                <label>Choose PIN</label>
+                <input type="password" id="regPin" placeholder="4–6 digits" maxlength="6" inputmode="numeric">
+                <div class="pin-display" id="regPinDots">
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                    <div class="pin-dot"></div>
+                </div>
+                <span class="field-hint">4 to 6 digits</span>
+            </div>
+            <div class="color-row">
+                <label>Choose Your Color</label>
+                <div class="color-swatches" id="colorSwatches">
+                    <!-- Preset colors -->
+                    <div class="swatch selected" style="background:#00ff41" data-color="#00ff41" onclick="selectSwatch(this)"></div>
+                    <div class="swatch" style="background:#ffb700" data-color="#ffb700" onclick="selectSwatch(this)"></div>
+                    <div class="swatch" style="background:#00bfff" data-color="#00bfff" onclick="selectSwatch(this)"></div>
+                    <div class="swatch" style="background:#ff3b3b" data-color="#ff3b3b" onclick="selectSwatch(this)"></div>
+                    <div class="swatch" style="background:#bf00ff" data-color="#bf00ff" onclick="selectSwatch(this)"></div>
+                    <div class="swatch" style="background:#ff6ec7" data-color="#ff6ec7" onclick="selectSwatch(this)"></div>
+                    <div class="swatch" style="background:#ff8c00" data-color="#ff8c00" onclick="selectSwatch(this)"></div>
+                    <div class="swatch" style="background:#ffffff" data-color="#ffffff" onclick="selectSwatch(this)"></div>
+                    <!-- Custom color picker -->
+                    <div class="swatch-custom" title="Custom color">
+                        +
+                        <input type="color" id="customColor" value="#00ff41" oninput="selectCustomColor(this.value)">
+                    </div>
+                </div>
+            </div>
+            <button class="submit-btn" onclick="handleRegister()">▶ CREATE ACCOUNT</button>
+        </div>
+
+    </div>
+</div>
+
+<!-- Bottom status bar -->
+<div class="status-bar">
+    <span><span class="status-bar-dot"></span>SYSTEM ONLINE  //  ITEC 4810</span>
+    <span id="statusTime"></span>
+    <span>SECURE CHANNEL ACTIVE</span>
+</div>
+
+<script>
+    // ── Update clock in status bar ──
+    function updateTime() {
+        const now = new Date();
+        document.getElementById('statusTime').textContent =
+            now.toLocaleDateString() + '  ' + now.toLocaleTimeString();
+    }
+    updateTime();
+    setInterval(updateTime, 1000);
+
+    // ── Tab switcher ──
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach((b, i) => {
+            b.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register'));
+        });
+        document.getElementById('loginForm').classList.toggle('active', tab === 'login');
+        document.getElementById('registerForm').classList.toggle('active', tab === 'register');
+        clearMsg();
+    }
+
+    // ── PIN dot indicators ──
+    function updatePinDots(inputId, dotsId) {
+        const val = document.getElementById(inputId).value;
+        const dots = document.getElementById(dotsId).querySelectorAll('.pin-dot');
+        dots.forEach((dot, i) => dot.classList.toggle('filled', i < val.length));
+    }
+
+    document.getElementById('loginPin').addEventListener('input', () => updatePinDots('loginPin', 'loginPinDots'));
+    document.getElementById('regPin').addEventListener('input', () => updatePinDots('regPin', 'regPinDots'));
+
+    // Only allow digits in PIN fields
+    ['loginPin', 'regPin'].forEach(id => {
+        document.getElementById(id).addEventListener('keypress', e => {
+            if (!/[0-9]/.test(e.key)) e.preventDefault();
+        });
+    });
+
+    // ── Color swatch selection ──
+    let selectedColor = '#00ff41';
+
+    function selectSwatch(el) {
+        document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedColor = el.dataset.color;
+    }
+
+    function selectCustomColor(val) {
+        document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+        selectedColor = val;
+        // Update the custom swatch background to preview the chosen color
+        document.querySelector('.swatch-custom').style.background = val;
+    }
+
+    // ── Message display ──
+    function showMsg(text, type) {
+        const el = document.getElementById('authMsg');
+        el.textContent = text;
+        el.className = 'msg ' + type;
+    }
+
+    function clearMsg() {
+        const el = document.getElementById('authMsg');
+        el.className = 'msg';
+        el.textContent = '';
+    }
+
+    // ── LOGIN ──
+    async function handleLogin() {
+        const username = document.getElementById('loginUsername').value.trim();
+        const pin = document.getElementById('loginPin').value.trim();
+
+        if (!username || !pin) {
+            showMsg('⚠ All fields are required.', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ username, pin })
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                showMsg('✔ Authentication successful. Redirecting...', 'success');
+                setTimeout(() => window.location.href = '/', 1000);
+            } else {
+                showMsg('⚠ ' + (data.error || 'Invalid credentials.'), 'error');
+            }
+        } catch (err) {
+            showMsg('⚠ Connection error. Try again.', 'error');
+        }
+    }
+
+    // ── REGISTER ──
+    async function handleRegister() {
+        const username = document.getElementById('regUsername').value.trim();
+        const pin = document.getElementById('regPin').value.trim();
+
+        if (!username || !pin) {
+            showMsg('⚠ All fields are required.', 'error');
+            return;
+        }
+
+        if (username.length < 2) {
+            showMsg('⚠ Username must be at least 2 characters.', 'error');
+            return;
+        }
+
+        if (pin.length < 4 || pin.length > 6) {
+            showMsg('⚠ PIN must be 4 to 6 digits.', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ username, pin, color: selectedColor })
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                showMsg('✔ Account created! Redirecting...', 'success');
+                setTimeout(() => window.location.href = '/', 1000);
+            } else {
+                showMsg('⚠ ' + (data.error || 'Registration failed.'), 'error');
+            }
+        } catch (err) {
+            showMsg('⚠ Connection error. Try again.', 'error');
+        }
+    }
+
+    // Allow Enter key to submit forms
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            if (document.getElementById('loginForm').classList.contains('active')) {
+                handleLogin();
+            } else {
+                handleRegister();
+            }
+        }
+    });
+</script>
+
+</body>
+</html>

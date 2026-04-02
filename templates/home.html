@@ -577,6 +577,133 @@
             }
         }
 
+
+        /* ══════════════════════════════════════════
+           PROFILE ICON & DROPDOWN
+           Google-style colored circle with initials,
+           clicking opens a dropdown with color picker
+           and logout options.
+           ══════════════════════════════════════════ */
+        .profile-wrapper {
+            position: relative;
+        }
+
+        /* Colored circle with user initials */
+        .profile-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: var(--green-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-family: 'Orbitron', monospace;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--bg);
+            border: 2px solid transparent;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .profile-icon:hover {
+            border-color: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+
+        /* Dropdown menu */
+        .profile-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 200px;
+            background: var(--bg-panel2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 20px rgba(0,255,65,0.05);
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            z-index: 1000;
+            animation: dropdownAppear 0.15s ease;
+        }
+
+        .profile-menu.open {
+            display: flex;
+        }
+
+        @keyframes dropdownAppear {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Username header in dropdown */
+        .profile-menu-header {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.78rem;
+            color: var(--green);
+            font-family: 'Orbitron', monospace;
+            letter-spacing: 0.1em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Dropdown menu items */
+        .profile-menu-item {
+            padding: 10px 14px;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            letter-spacing: 0.05em;
+        }
+
+        .profile-menu-item:hover {
+            background: rgba(0,255,65,0.05);
+            color: var(--green);
+        }
+
+        /* Logout item — turns red on hover */
+        .profile-menu-logout:hover {
+            background: rgba(255,59,59,0.05);
+            color: var(--red);
+        }
+
+        /* Color picker inside dropdown */
+        .profile-color-picker {
+            padding: 8px 14px 10px;
+            border-top: 1px solid var(--border);
+            display: none;
+        }
+
+        .profile-color-picker.open {
+            display: block;
+        }
+
+        .profile-swatches {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .profile-swatch {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.15s ease;
+        }
+
+        .profile-swatch:hover,
+        .profile-swatch.selected {
+            border-color: white;
+            transform: scale(1.15);
+        }
+
     </style>
 </head>
 <body>
@@ -591,13 +718,40 @@
         <span class="header-subtitle">Emergency Communication System</span>
     </div>
     <div class="header-status">
-        <!-- Connection dot and label — updated by JavaScript when Socket.IO connects/disconnects -->
+        <!-- Connection dot and label -->
         <span>
             <span class="status-dot" id="connectionDot"></span>
             <span id="connectionLabel">Connecting...</span>
         </span>
-        <!-- Location status — updated by JavaScript after the browser asks for permission -->
+        <!-- Location status -->
         <span class="location-status" id="locationStatus">⊙ Location: Pending</span>
+        <!-- Profile icon — Google-style colored circle with initials -->
+        <div class="profile-wrapper" id="profileWrapper">
+            <div class="profile-icon" id="profileIcon" onclick="toggleProfileMenu()">
+                <span id="profileInitials">??</span>
+            </div>
+            <!-- Dropdown menu -->
+            <div class="profile-menu" id="profileMenu">
+                <div class="profile-menu-header">
+                    <span id="profileMenuName">Loading...</span>
+                </div>
+                <div class="profile-menu-item" onclick="toggleColorPicker()">
+                    ◈ Pick Color
+                </div>
+                <!-- Inline color picker (hidden by default) -->
+                <div class="profile-color-picker" id="profileColorPicker">
+                    <div class="profile-swatches" id="profileSwatches"></div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                        <label style="font-size:0.68rem;color:var(--text-dim);">Custom:</label>
+                        <input type="color" id="profileCustomColor" style="width:32px;height:24px;border:1px solid var(--border);background:var(--bg);cursor:pointer;border-radius:3px;">
+                        <button onclick="applyCustomColor()" style="font-family:'Share Tech Mono',monospace;font-size:0.68rem;padding:4px 10px;background:rgba(0,255,65,0.06);border:1px solid var(--green-dim);color:var(--green);cursor:pointer;border-radius:3px;">Apply</button>
+                    </div>
+                </div>
+                <div class="profile-menu-item profile-menu-logout" onclick="handleLogout()">
+                    ⏻ Logout
+                </div>
+            </div>
+        </div>
     </div>
 </header>
 
@@ -791,6 +945,7 @@
         // ESP32 messages get a special amber style, browser messages get the default green
         const isESP32 = msg.rescuer === 'esp32_glove';
         item.className = 'message-item' + (isESP32 ? ' esp32' : '');
+        item.dataset.userId = msg.rescuer; // Store user ID for color updates
 
         // Colored dot representing the sender (color assigned by Flask based on user ID)
         const dot = document.createElement('div');
@@ -804,7 +959,8 @@
         const timeStr = msg.time ? new Date(msg.time).toLocaleTimeString() : new Date().toLocaleTimeString();
 
         // Show "ESP32 Glove" or a shortened version of the user's UUID
-        const sender = isESP32 ? 'ESP32 Glove' : ('User ' + (msg.rescuer ? msg.rescuer.substring(0, 8) : ''));
+        // Show username if available, otherwise fall back to shortened UUID
+        const sender = isESP32 ? 'ESP32 Glove' : (msg.username || ('User ' + (msg.rescuer ? msg.rescuer.substring(0, 8) : '')));
 
         // Build the message HTML — show coordinates only if location was captured
         content.innerHTML = `
@@ -859,8 +1015,7 @@
         );
     }
 
-    // Ask for location as soon as the page loads
-    requestLocation();
+    // Location is requested after user info is loaded (not before login)
 
     // ══════════════════════════════════════════
     // MORSE INPUT — KEYBOARD HANDLER
@@ -1085,6 +1240,150 @@
 
     // Auto-focus the Morse input when the page finishes loading
     window.addEventListener('load', () => morseDisplay.focus());
+
+    // ══════════════════════════════════════════
+    // USER SESSION — PROFILE ICON
+    // Loads the current user's info from Flask
+    // and sets up the profile icon and dropdown.
+    // ══════════════════════════════════════════
+    let currentUser = null;
+
+    const PROFILE_COLORS = [
+        '#00ff41', '#ffb700', '#00bfff', '#ff3b3b',
+        '#bf00ff', '#ff6ec7', '#ff8c00', '#ffffff'
+    ];
+
+    async function loadUserInfo() {
+        try {
+            const res = await fetch('/me', { credentials: 'same-origin' });
+            if (!res.ok) {
+                // Not logged in — redirect to login page
+                window.location.href = '/login';
+                return;
+            }
+            const user = await res.json();
+            currentUser = user;
+
+            // Set profile icon color and initials
+            const icon = document.getElementById('profileIcon');
+            icon.style.background = user.color;
+            // Use initials from username (up to 2 chars)
+            const initials = user.username.substring(0, 2).toUpperCase();
+            document.getElementById('profileInitials').textContent = initials;
+
+            // Set dropdown header name
+            document.getElementById('profileMenuName').textContent = user.username;
+
+            // Build color swatches in dropdown
+            buildProfileSwatches(user.color);
+
+            // Now that user is loaded, request location
+            requestLocation();
+
+        } catch (err) {
+            console.error('Failed to load user info:', err);
+        }
+    }
+
+    function buildProfileSwatches(currentColor) {
+        const container = document.getElementById('profileSwatches');
+        container.innerHTML = '';
+        PROFILE_COLORS.forEach(color => {
+            const s = document.createElement('div');
+            s.className = 'profile-swatch' + (color === currentColor ? ' selected' : '');
+            s.style.background = color;
+            s.onclick = () => applyColor(color, s);
+            container.appendChild(s);
+        });
+        // Set custom color input to current color
+        document.getElementById('profileCustomColor').value = currentColor;
+    }
+
+    // ── Toggle profile dropdown ──
+    function toggleProfileMenu() {
+        document.getElementById('profileMenu').classList.toggle('open');
+        // Close color picker when closing menu
+        if (!document.getElementById('profileMenu').classList.contains('open')) {
+            document.getElementById('profileColorPicker').classList.remove('open');
+        }
+    }
+
+    // Close dropdown when clicking outside of it
+    document.addEventListener('click', function(e) {
+        const wrapper = document.getElementById('profileWrapper');
+        if (!wrapper.contains(e.target)) {
+            document.getElementById('profileMenu').classList.remove('open');
+            document.getElementById('profileColorPicker').classList.remove('open');
+        }
+    });
+
+    // ── Toggle color picker inside dropdown ──
+    function toggleColorPicker() {
+        document.getElementById('profileColorPicker').classList.toggle('open');
+    }
+
+    // ── Apply a color from swatches ──
+    async function applyColor(color, swatchEl) {
+        // Update swatch selection visually
+        document.querySelectorAll('.profile-swatch').forEach(s => s.classList.remove('selected'));
+        if (swatchEl) swatchEl.classList.add('selected');
+        document.getElementById('profileCustomColor').value = color;
+        await sendColorUpdate(color);
+    }
+
+    // ── Apply custom color from color input ──
+    async function applyCustomColor() {
+        const color = document.getElementById('profileCustomColor').value;
+        document.querySelectorAll('.profile-swatch').forEach(s => s.classList.remove('selected'));
+        await sendColorUpdate(color);
+    }
+
+    // ── Send color update to Flask ──
+    async function sendColorUpdate(color) {
+        try {
+            const res = await fetch('/update_color', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ color })
+            });
+            if (res.ok) {
+                // Update profile icon color
+                document.getElementById('profileIcon').style.background = color;
+                if (currentUser) currentUser.color = color;
+
+                // Update all messages in the feed that belong to this user
+                if (currentUser) {
+                    document.querySelectorAll('.message-item').forEach(item => {
+                        const dot = item.querySelector('.message-color-tag');
+                        if (dot && item.dataset.userId === currentUser.user_id) {
+                            dot.style.backgroundColor = color;
+                        }
+                    });
+                }
+                console.log('Color updated to', color);
+            }
+        } catch (err) {
+            console.error('Failed to update color:', err);
+        }
+    }
+
+    // ── Logout ──
+    async function handleLogout() {
+        try {
+            await fetch('/logout', {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
+        } catch (err) {
+            console.error('Logout error:', err);
+        }
+        window.location.href = '/login';
+    }
+
+    // Load user info when the page loads
+    loadUserInfo();
+
 
 </script>
 

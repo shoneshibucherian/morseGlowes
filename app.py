@@ -1,17 +1,23 @@
-from flask import Flask, render_template, request, jsonify, Response, make_response
+from flask import Flask, render_template, request, jsonify, make_response, session, redirect, url_for
 from flask_socketio import SocketIO, emit
 from translator import encrypt, decrypt
-import json
 import datetime
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 import uuid
+import hashlib
 
 uri = "mongodb://admin:password@localhost:27017/"
 
 app = Flask(__name__)
+
+# Secret key required for session management
+# In production this should be a long random string stored securely
+app.secret_key = "morse_app_secret_key_itec4810"
+
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# ── MongoDB connection ──
 client = MongoClient(uri, server_api=ServerApi('1'))
 try:
     client.admin.command('ping')
@@ -20,123 +26,231 @@ except Exception as e:
     print(e)
 
 db = client['Secret']
-collection = db['morese_code']
+collection = db['morese_code']   # Messages collection
+users_col  = db['users']         # Users collection (new)
 
+# Track last message ID for polling
 all_message = list(collection.find())
-if len(all_message) > 0:
-    last_id = all_message[-1]["_id"]
-else:
-    last_id = None
+last_id = all_message[-1]["_id"] if all_message else None
 
 
-def add(record, sid, latitude=None, longitude=None):
-    """Insert a decoded message into MongoDB and broadcast to all clients."""
-    time = datetime.datetime.now()
-    color = get_color_from_string(sid)
+# ══════════════════════════════════════════
+# HELPER FUNCTIONS
+# ══════════════════════════════════════════
 
-    doc = {
-        'rescuer': sid,
-        'message': record,
-        'time': time,
-        'color': color
-    }
+def hash_pin(pin):
+    """Hashes a PIN using SHA-256 so we never store plain PINs in MongoDB."""
+    return hashlib.sha256(pin.encode()).hexdigest()
 
-    # Attach location if provided
-    if latitude is not None and longitude is not None:
-        doc['latitude'] = latitude
-        doc['longitude'] = longitude
+def get_current_user():
+    """Returns the current logged-in user's document from MongoDB, or None."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return None
+    return users_col.find_one({'_id': user_id})
 
-    collection.insert_one(doc)
-    print(doc)
+def login_required(f):
+    """Decorator that redirects to login page if user is not logged in."""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('user_id'):
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated
 
-    # Broadcast to all clients including sender so message appears in their feed
-    emit('/new_message', {
-        'rescuer': sid,
-        'message': record,
-        'time': str(time),
+
+# ══════════════════════════════════════════
+# PAGE ROUTES
+# ══════════════════════════════════════════
+
+@app.route('/')
+@login_required
+def index():
+    """Main chat page — only accessible when logged in."""
+    return render_template('home.html')
+
+
+@app.route('/login')
+def login_page():
+    """Login page — redirects to home if already logged in."""
+    if session.get('user_id'):
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+
+# ══════════════════════════════════════════
+# AUTH ENDPOINTS
+# ══════════════════════════════════════════
+
+@app.route('/register', methods=['POST'])
+def register():
+    """Creates a new user account and logs them in."""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    pin      = data.get('pin', '').strip()
+    color    = data.get('color', '#00ff41')
+
+    # Validate inputs
+    if not username or not pin:
+        return jsonify({'error': 'All fields are required.'}), 400
+
+    if len(username) < 2:
+        return jsonify({'error': 'Username must be at least 2 characters.'}), 400
+
+    if not pin.isdigit() or len(pin) < 4 or len(pin) > 6:
+        return jsonify({'error': 'PIN must be 4 to 6 digits.'}), 400
+
+    # Check if username already taken (case-insensitive)
+    if users_col.find_one({'username_lower': username.lower()}):
+        return jsonify({'error': 'Username already taken. Choose another.'}), 409
+
+    # Create user document
+    user_id = str(uuid.uuid4())
+    users_col.insert_one({
+        '_id': user_id,
+        'username': username,
+        'username_lower': username.lower(),
+        'pin_hash': hash_pin(pin),
         'color': color,
-        'latitude': latitude,
-        'longitude': longitude
-    }, broadcast=True)
+        'created_at': datetime.datetime.now()
+    })
+
+    # Log the user in immediately after registration
+    session['user_id'] = user_id
+    session['username'] = username
+    session['color'] = color
+    print(f"New user registered: {username}")
+
+    return jsonify({'message': 'Account created successfully.'}), 201
 
 
-def string_to_hash(s):
-    """Hashes a string to a numerical value."""
-    hash_val = 0
-    for char in s:
-        hash_val = ord(char) + ((hash_val << 5) - hash_val)
-    return hash_val
+@app.route('/login', methods=['POST'])
+def login():
+    """Logs in an existing user."""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    pin      = data.get('pin', '').strip()
+
+    if not username or not pin:
+        return jsonify({'error': 'All fields are required.'}), 400
+
+    # Find user by username (case-insensitive)
+    user = users_col.find_one({'username_lower': username.lower()})
+
+    if not user or user['pin_hash'] != hash_pin(pin):
+        return jsonify({'error': 'Incorrect username or PIN.'}), 401
+
+    # Store user info in session
+    session['user_id'] = user['_id']
+    session['username'] = user['username']
+    session['color'] = user['color']
+    print(f"User logged in: {user['username']}")
+
+    return jsonify({'message': 'Login successful.'}), 200
 
 
-def hash_to_color(hash_val):
-    """Converts a hash value to an RGB color string."""
-    r = (hash_val & 0xFF0000) >> 16
-    g = (hash_val & 0x00FF00) >> 8
-    b = hash_val & 0x0000FF
-    return f"rgb({r}, {g}, {b})"
+@app.route('/logout', methods=['POST'])
+def logout():
+    """Logs out the current user by clearing their session."""
+    username = session.get('username', 'Unknown')
+    session.clear()
+    print(f"User logged out: {username}")
+    return jsonify({'message': 'Logged out.'}), 200
 
 
-def get_color_from_string(s):
-    """Generates a color string from an input string."""
-    hash_val = string_to_hash(s)
-    return hash_to_color(hash_val)
+# ══════════════════════════════════════════
+# USER INFO ENDPOINT
+# ══════════════════════════════════════════
 
+@app.route('/me')
+@login_required
+def me():
+    """Returns the current user's info for the frontend (username, color)."""
+    return jsonify({
+        'user_id': session['user_id'],
+        'username': session['username'],
+        'color': session['color']
+    })
+
+
+# ══════════════════════════════════════════
+# COLOR UPDATE ENDPOINT
+# ══════════════════════════════════════════
+
+@app.route('/update_color', methods=['POST'])
+@login_required
+def update_color():
+    """Updates the user's color in MongoDB, their session, and all their existing messages."""
+    data = request.get_json()
+    new_color = data.get('color')
+
+    if not new_color:
+        return jsonify({'error': 'Color is required.'}), 400
+
+    user_id = session['user_id']
+
+    # Update color in users collection
+    users_col.update_one({'_id': user_id}, {'$set': {'color': new_color}})
+
+    # Update color on all existing messages by this user
+    collection.update_many({'rescuer': user_id}, {'$set': {'color': new_color}})
+
+    # Update session
+    session['color'] = new_color
+
+    print(f"User {session['username']} updated color to {new_color}")
+    return jsonify({'message': 'Color updated.', 'color': new_color}), 200
+
+
+# ══════════════════════════════════════════
+# MESSAGE ENDPOINTS
+# ══════════════════════════════════════════
 
 @app.route('/new_messages')
-def get_all_messages():
-    """Fetches and returns the latest message from the database."""
+@login_required
+def get_new_messages():
+    """Returns the latest message if it's newer than the last seen one."""
     global last_id
-
     try:
         all_messages = list(collection.find())
-        if len(all_messages) > 0:
-            for message in all_messages:
-                message["_id"] = str(message["_id"])
-
+        if all_messages:
+            for msg in all_messages:
+                msg["_id"] = str(msg["_id"])
             if last_id != all_messages[-1]["_id"]:
                 last_id = all_messages[-1]["_id"]
                 return jsonify([all_messages[-1]])
-
         return jsonify([])
     except Exception as e:
-        print(f"Error fetching messages: {e}")
         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/full_messages')
+@login_required
 def full_messages():
-    """Fetches and returns all messages from the database."""
+    """Returns all messages from MongoDB."""
     try:
         all_messages = list(collection.find())
-        for message in all_messages:
-            message["_id"] = str(message["_id"])
-
+        for msg in all_messages:
+            msg["_id"] = str(msg["_id"])
         if not all_messages:
             print("No messages in the database.")
             return jsonify([])
-
-        print("Sending all messages on connect")
         return jsonify(all_messages)
     except Exception as e:
-        print(f"Error fetching all messages: {e}")
         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/connect')
+@login_required
 def connect_user():
-    """Handles user connection and sets a cookie with a unique user ID."""
-    user_id = request.cookies.get('user_id')
+    """Returns confirmation that the user is connected."""
+    return jsonify({"message": "Connected", "username": session.get('username')})
 
-    if not user_id:
-        user_id = str(uuid.uuid4())
-        print(f"New user connected: {user_id}")
-    else:
-        print(f"Returning user connected: {user_id}")
 
-    response = make_response(jsonify({"message": "Connected"}))
-    response.set_cookie('user_id', user_id)
-    return response
-
+# ══════════════════════════════════════════
+# SOCKET.IO EVENTS
+# ══════════════════════════════════════════
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -145,11 +259,7 @@ def handle_disconnect():
 
 @socketio.on('connect')
 def handle_socketio_connect():
-    user_id = request.cookies.get('user_id')
-    if not user_id:
-        print(f"New device connected")
-    else:
-        print(f"Returning device connected: {user_id}")
+    print(f"Socket connected: {session.get('username', 'unknown')}")
     emit('message', {'message': 'Welcome from MorseApp Flask!'})
 
 
@@ -158,16 +268,21 @@ def handle_esp32_message(data):
     """Handles incoming Morse code messages from the ESP32 glove."""
     print(f"Received from ESP32: {data}")
     message = decrypt(data['morse'])
-    color = get_color_from_string(data.get('device_id', 'esp32'))
+    device_id = data.get('device_id', 'esp32')
+    color = '#ffb700'
     time = datetime.datetime.now()
+
     collection.insert_one({
-        'rescuer': data.get('device_id', 'esp32'),
+        'rescuer': device_id,
+        'username': 'ESP32 Glove',
         'message': message,
         'time': time,
         'color': color
     })
+
     emit('/new_message', {
-        'rescuer': data.get('device_id', 'esp32'),
+        'rescuer': device_id,
+        'username': 'ESP32 Glove',
         'message': message,
         'time': str(time),
         'color': color
@@ -175,28 +290,50 @@ def handle_esp32_message(data):
     print(f"Stored in MongoDB: {message}")
 
 
-@app.route('/')
-def index():
-    return render_template('home.html')
-
-
 @socketio.on('/message')
 def handle_message(data):
     """Handles incoming Morse code messages from the browser."""
-    # data can be a string (morse only) or a dict (morse + location)
     if isinstance(data, dict):
-        morse = data.get('morse', '')
-        latitude = data.get('latitude')
+        morse     = data.get('morse', '')
+        latitude  = data.get('latitude')
         longitude = data.get('longitude')
     else:
-        morse = data
-        latitude = None
+        morse     = data
+        latitude  = None
         longitude = None
 
-    message = decrypt(morse)
-    sid = request.cookies.get('user_id', str(uuid.uuid4()))
-    add(message, sid, latitude, longitude)
-    print(f"Received: {morse} | Translated: {message} | Location: {latitude}, {longitude}")
+    message  = decrypt(morse)
+    user_id  = session.get('user_id', str(uuid.uuid4()))
+    username = session.get('username', 'Unknown')
+    color    = session.get('color', '#00ff41')
+    time     = datetime.datetime.now()
+
+    doc = {
+        'rescuer':  user_id,
+        'username': username,
+        'message':  message,
+        'time':     time,
+        'color':    color
+    }
+
+    if latitude is not None and longitude is not None:
+        doc['latitude']  = latitude
+        doc['longitude'] = longitude
+
+    collection.insert_one(doc)
+
+    # Broadcast to ALL clients including sender
+    emit('/new_message', {
+        'rescuer':   user_id,
+        'username':  username,
+        'message':   message,
+        'time':      str(time),
+        'color':     color,
+        'latitude':  latitude,
+        'longitude': longitude
+    }, broadcast=True)
+
+    print(f"Received: {morse} | Translated: {message} | User: {username} | Location: {latitude}, {longitude}")
 
 
 if __name__ == '__main__':
