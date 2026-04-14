@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, make_response, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_socketio import SocketIO, emit
 from translator import encrypt, decrypt
 import datetime
@@ -6,18 +6,15 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 import uuid
 import hashlib
+import random
 
 uri = "mongodb://admin:password@localhost:27017/"
 
 app = Flask(__name__)
-
-# Secret key required for session management
-# In production this should be a long random string stored securely
 app.secret_key = "morse_app_secret_key_itec4810"
-
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# ── MongoDB connection ──
+# ── MongoDB ──
 client = MongoClient(uri, server_api=ServerApi('1'))
 try:
     client.admin.command('ping')
@@ -25,36 +22,77 @@ try:
 except Exception as e:
     print(e)
 
-db = client['Secret']
-collection = db['morese_code']   # Messages collection
-users_col  = db['users']         # Users collection (new)
+db         = client['Secret']
+collection = db['morese_code']
+users_col  = db['users']
 
-# Track last message ID for polling
 all_message = list(collection.find())
 last_id = all_message[-1]["_id"] if all_message else None
 
+# ── NATO Phonetic Alphabet ──
+NATO = [
+    'ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT',
+    'GOLF', 'HOTEL', 'INDIA', 'JULIET', 'KILO', 'LIMA',
+    'MIKE', 'NOVEMBER', 'OSCAR', 'PAPA', 'QUEBEC', 'ROMEO',
+    'SIERRA', 'TANGO', 'UNIFORM', 'VICTOR', 'WHISKEY',
+    'XRAY', 'YANKEE', 'ZULU'
+]
+
 
 # ══════════════════════════════════════════
-# HELPER FUNCTIONS
+# HELPERS
 # ══════════════════════════════════════════
 
 def hash_pin(pin):
-    """Hashes a PIN using SHA-256 so we never store plain PINs in MongoDB."""
+    """SHA-256 hash a PIN so we never store it in plain text."""
     return hashlib.sha256(pin.encode()).hexdigest()
 
-def get_current_user():
-    """Returns the current logged-in user's document from MongoDB, or None."""
-    user_id = session.get('user_id')
-    if not user_id:
-        return None
-    return users_col.find_one({'_id': user_id})
+
+def generate_codename():
+    """
+    Generates a unique two-word NATO codename (e.g. ALPHA BRAVO).
+    676 possible combinations (26x26).
+    """
+    attempts = 0
+    while attempts < 676:
+        word1 = random.choice(NATO)
+        word2 = random.choice(NATO)
+        if word1 == word2:
+            attempts += 1
+            continue
+        codename = f"{word1} {word2}"
+        if not users_col.find_one({'codename': codename}):
+            return codename
+        attempts += 1
+    return f"ZULU {uuid.uuid4().hex[:4].upper()}"
+
 
 def login_required(f):
-    """Decorator that redirects to login page if user is not logged in."""
     from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get('user_id'):
+        user_id = session.get('user_id')
+        if not user_id:
+            return redirect(url_for('login_page'))
+        # Check DB status on every request — catches kick/revoke after refresh
+        user = users_col.find_one({'_id': user_id})
+        if not user or user.get('status') not in ('approved',):
+            session.clear()
+            return redirect(url_for('login_page'))
+        # If kicked, clear session and force fresh login
+        if user.get('kicked'):
+            users_col.update_one({'_id': user_id}, {'$set': {'kicked': False}})
+            session.clear()
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('user_id') or session.get('role') != 'admin':
             return redirect(url_for('login_page'))
         return f(*args, **kwargs)
     return decorated
@@ -67,16 +105,25 @@ def login_required(f):
 @app.route('/')
 @login_required
 def index():
-    """Main chat page — only accessible when logged in."""
+    # Admins should never see home.html — redirect to admin page
+    if session.get('role') == 'admin':
+        return redirect(url_for('admin_page'))
     return render_template('home.html')
 
 
 @app.route('/login')
 def login_page():
-    """Login page — redirects to home if already logged in."""
     if session.get('user_id'):
+        if session.get('role') == 'admin':
+            return redirect(url_for('admin_page'))
         return redirect(url_for('index'))
     return render_template('login.html')
+
+
+@app.route('/admin')
+@admin_required
+def admin_page():
+    return render_template('admin.html')
 
 
 # ══════════════════════════════════════════
@@ -85,122 +132,289 @@ def login_page():
 
 @app.route('/register', methods=['POST'])
 def register():
-    """Creates a new user account and logs them in."""
-    data = request.get_json()
+    """Adds user to the waiting list — does NOT log them in."""
+    data     = request.get_json()
     username = data.get('username', '').strip()
     pin      = data.get('pin', '').strip()
     color    = data.get('color', '#00ff41')
 
-    # Validate inputs
     if not username or not pin:
         return jsonify({'error': 'All fields are required.'}), 400
-
     if len(username) < 2:
         return jsonify({'error': 'Username must be at least 2 characters.'}), 400
-
     if not pin.isdigit() or len(pin) < 4 or len(pin) > 6:
         return jsonify({'error': 'PIN must be 4 to 6 digits.'}), 400
-
-    # Check if username already taken (case-insensitive)
     if users_col.find_one({'username_lower': username.lower()}):
-        return jsonify({'error': 'Username already taken. Choose another.'}), 409
+        return jsonify({'error': 'Username already taken.'}), 409
 
-    # Create user document
-    user_id = str(uuid.uuid4())
+    # Use lowercase username as the ID for easy tracking in messages collection
+    user_id = username.lower()
     users_col.insert_one({
-        '_id': user_id,
-        'username': username,
+        '_id':            user_id,
+        'username':       username,
         'username_lower': username.lower(),
-        'pin_hash': hash_pin(pin),
-        'color': color,
-        'created_at': datetime.datetime.now()
+        'pin_hash':       hash_pin(pin),
+        'color':          color,
+        'codename':       None,
+        'role':           'user',
+        'status':         'pending',
+        'layout_color':   None,
+        'bg_color':       None,
+        'theme_name':     None,
+        'created_at':     datetime.datetime.now()
     })
 
-    # Log the user in immediately after registration
-    session['user_id'] = user_id
-    session['username'] = username
-    session['color'] = color
-    print(f"New user registered: {username}")
+    print(f"New registration pending: {username}")
 
-    return jsonify({'message': 'Account created successfully.'}), 201
+    # Notify admin page in real time that a new user is waiting
+    socketio.emit('new_pending_user', {'username': username})
+
+    return jsonify({'message': 'Registration submitted. Awaiting admin approval.', 'username': username}), 201
 
 
 @app.route('/login', methods=['POST'])
 def login():
-    """Logs in an existing user."""
-    data = request.get_json()
+    """Logs in a user or admin."""
+    data     = request.get_json()
     username = data.get('username', '').strip()
     pin      = data.get('pin', '').strip()
 
     if not username or not pin:
         return jsonify({'error': 'All fields are required.'}), 400
 
-    # Find user by username (case-insensitive)
     user = users_col.find_one({'username_lower': username.lower()})
 
     if not user or user['pin_hash'] != hash_pin(pin):
         return jsonify({'error': 'Incorrect username or PIN.'}), 401
 
-    # Store user info in session
-    session['user_id'] = user['_id']
-    session['username'] = user['username']
-    session['color'] = user['color']
-    print(f"User logged in: {user['username']}")
+    if user.get('status') == 'pending':
+        return jsonify({'status': 'pending', 'username': username, 'message': 'Your account is awaiting admin approval.'}), 403
 
-    return jsonify({'message': 'Login successful.'}), 200
+    if user.get('status') == 'rejected':
+        return jsonify({'error': 'Your account has been rejected. Contact your administrator.'}), 403
+
+    # Clear kicked flag on fresh login
+    users_col.update_one({'_id': user['_id']}, {'$set': {'kicked': False}})
+
+    session['user_id']  = user['_id']
+    session['username'] = user['username']
+    session['codename'] = user.get('codename', user['username'])
+    session['color']    = user['color']
+    session['role']     = user.get('role', 'user')
+    print(f"User logged in: {user['username']} ({session['role']})")
+
+    if user.get('role') == 'admin':
+        return jsonify({'message': 'Login successful.', 'redirect': '/admin'}), 200
+
+    return jsonify({'message': 'Login successful.', 'redirect': '/'}), 200
 
 
 @app.route('/logout', methods=['POST'])
 def logout():
-    """Logs out the current user by clearing their session."""
     username = session.get('username', 'Unknown')
+    user_id  = session.get('user_id')
+    if user_id:
+        users_col.update_one({'_id': user_id}, {'$set': {'online': False}})
+        socketio.emit('operator_status_change', {'user_id': user_id, 'online': False})
     session.clear()
     print(f"User logged out: {username}")
     return jsonify({'message': 'Logged out.'}), 200
 
 
+@app.route('/check_status')
+def check_status():
+    """Polling endpoint — checks if a pending user has been approved."""
+    username = request.args.get('username', '').strip()
+    if not username:
+        return jsonify({'status': 'unknown'}), 400
+    user = users_col.find_one({'username_lower': username.lower()})
+    if not user:
+        return jsonify({'status': 'unknown'}), 404
+    return jsonify({'status': user.get('status', 'pending')}), 200
+
+
 # ══════════════════════════════════════════
-# USER INFO ENDPOINT
+# USER INFO
 # ══════════════════════════════════════════
 
 @app.route('/me')
 @login_required
 def me():
-    """Returns the current user's info for the frontend (username, color)."""
+    user = users_col.find_one({'_id': session['user_id']})
     return jsonify({
-        'user_id': session['user_id'],
-        'username': session['username'],
-        'color': session['color']
+        'user_id':      session['user_id'],
+        'username':     session['username'],
+        'codename':     session.get('codename', session['username']),
+        'color':        session['color'],
+        'role':         session.get('role', 'user'),
+        'layout_color': user.get('layout_color') if user else None,
+        'bg_color':     user.get('bg_color') if user else None,
+        'theme_name':   user.get('theme_name') if user else None,
     })
 
 
 # ══════════════════════════════════════════
-# COLOR UPDATE ENDPOINT
+# COLOR & LAYOUT
 # ══════════════════════════════════════════
 
 @app.route('/update_color', methods=['POST'])
 @login_required
 def update_color():
-    """Updates the user's color in MongoDB, their session, and all their existing messages."""
-    data = request.get_json()
+    data      = request.get_json()
     new_color = data.get('color')
-
     if not new_color:
         return jsonify({'error': 'Color is required.'}), 400
 
     user_id = session['user_id']
-
-    # Update color in users collection
     users_col.update_one({'_id': user_id}, {'$set': {'color': new_color}})
-
-    # Update color on all existing messages by this user
     collection.update_many({'rescuer': user_id}, {'$set': {'color': new_color}})
-
-    # Update session
     session['color'] = new_color
-
-    print(f"User {session['username']} updated color to {new_color}")
     return jsonify({'message': 'Color updated.', 'color': new_color}), 200
+
+
+@app.route('/update_layout', methods=['POST'])
+@login_required
+def update_layout():
+    data         = request.get_json()
+    layout_color = data.get('layout_color')
+    bg_color     = data.get('bg_color')
+
+    theme_name = data.get('theme_name')
+    update = {}
+    if layout_color: update['layout_color'] = layout_color
+    if bg_color:     update['bg_color']     = bg_color
+    if theme_name:   update['theme_name']   = theme_name
+    if update:
+        users_col.update_one({'_id': session['user_id']}, {'$set': update})
+    return jsonify({'message': 'Layout updated.'}), 200
+
+
+# ══════════════════════════════════════════
+# ADMIN ENDPOINTS
+# ══════════════════════════════════════════
+
+@app.route('/admin/pending')
+@admin_required
+def admin_pending():
+    pending = list(users_col.find({'status': 'pending', 'role': 'user'}))
+    for u in pending:
+        u['_id'] = str(u['_id'])
+        u.pop('pin_hash', None)
+    return jsonify(pending), 200
+
+
+@app.route('/admin/approved')
+@admin_required
+def admin_approved():
+    approved = list(users_col.find({'status': 'approved', 'role': 'user'}))
+    for u in approved:
+        u['_id'] = str(u['_id'])
+        u.pop('pin_hash', None)
+    return jsonify(approved), 200
+
+
+@app.route('/admin/approve', methods=['POST'])
+@admin_required
+def admin_approve():
+    data    = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required.'}), 400
+
+    user = users_col.find_one({'_id': user_id})
+    if not user:
+        return jsonify({'error': 'User not found.'}), 404
+
+    codename = generate_codename()
+    users_col.update_one({'_id': user_id}, {'$set': {
+        'status':      'approved',
+        'codename':    codename,
+        'approved_at': datetime.datetime.now()
+    }})
+    print(f"Approved: {user['username']} → {codename}")
+    return jsonify({'message': f"Approved. Codename: {codename}", 'codename': codename}), 200
+
+
+@app.route('/admin/reject', methods=['POST'])
+@admin_required
+def admin_reject():
+    data    = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required.'}), 400
+    user = users_col.find_one({'_id': user_id})
+    users_col.update_one({'_id': user_id}, {'$set': {'status': 'rejected'}})
+    print(f"Rejected user: {user.get('username', user_id) if user else user_id}")
+    return jsonify({'message': 'User rejected.'}), 200
+
+
+@app.route('/admin/kick', methods=['POST'])
+@admin_required
+def admin_kick():
+    data    = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required.'}), 400
+    user = users_col.find_one({'_id': user_id})
+    if not user:
+        return jsonify({'error': 'User not found.'}), 404
+    socket_id = user.get('socket_id')
+    # Mark offline and set a kicked flag so login_required forces re-login
+    users_col.update_one({'_id': user_id}, {'$set': {
+        'online':    False,
+        'socket_id': None,
+        'kicked':    True
+    }})
+
+    # Target the specific user's socket if available
+    if socket_id:
+        socketio.emit('kicked', {'message': 'You have been disconnected by OVERLORD.'}, to=socket_id)
+    else:
+        socketio.emit('kicked', {'message': 'You have been disconnected by OVERLORD.'})
+
+    socketio.emit('operator_status_change', {'user_id': user_id, 'online': False, 'username': user.get('username', '')})
+    print(f"Admin kicked: {user.get('username', user_id)}")
+    return jsonify({'message': 'User kicked.'}), 200
+
+
+@app.route('/admin/revoke', methods=['POST'])
+@admin_required
+def admin_revoke():
+    data    = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required.'}), 400
+    user = users_col.find_one({'_id': user_id})
+    if not user:
+        return jsonify({'error': 'User not found.'}), 404
+    socket_id = user.get('socket_id')
+    users_col.update_one({'_id': user_id}, {'$set': {
+        'status':    'rejected',
+        'online':    False,
+        'socket_id': None,
+        'codename':  None
+    }})
+
+    # Target the specific user's socket if available
+    if socket_id:
+        socketio.emit('kicked', {'message': 'Your access has been revoked by OVERLORD.'}, to=socket_id)
+    else:
+        socketio.emit('kicked', {'message': 'Your access has been revoked by OVERLORD.'})
+
+    socketio.emit('operator_status_change', {'user_id': user_id, 'online': False, 'username': user.get('username', '')})
+    print(f"Admin revoked access: {user.get('username', user_id)}")
+    return jsonify({'message': 'Access revoked.'}), 200
+
+
+@app.route('/admin/stats')
+@admin_required
+def admin_stats():
+    return jsonify({
+        'pending':  users_col.count_documents({'status': 'pending', 'role': 'user'}),
+        'approved': users_col.count_documents({'status': 'approved', 'role': 'user'}),
+        'rejected': users_col.count_documents({'status': 'rejected', 'role': 'user'}),
+        'messages': collection.count_documents({})
+    }), 200
 
 
 # ══════════════════════════════════════════
@@ -210,7 +424,6 @@ def update_color():
 @app.route('/new_messages')
 @login_required
 def get_new_messages():
-    """Returns the latest message if it's newer than the last seen one."""
     global last_id
     try:
         all_messages = list(collection.find())
@@ -228,13 +441,11 @@ def get_new_messages():
 @app.route('/full_messages')
 @login_required
 def full_messages():
-    """Returns all messages from MongoDB."""
     try:
         all_messages = list(collection.find())
         for msg in all_messages:
             msg["_id"] = str(msg["_id"])
         if not all_messages:
-            print("No messages in the database.")
             return jsonify([])
         return jsonify(all_messages)
     except Exception as e:
@@ -244,55 +455,68 @@ def full_messages():
 @app.route('/connect')
 @login_required
 def connect_user():
-    """Returns confirmation that the user is connected."""
-    return jsonify({"message": "Connected", "username": session.get('username')})
+    return jsonify({"message": "Connected"})
 
 
 # ══════════════════════════════════════════
-# SOCKET.IO EVENTS
+# SOCKET.IO
 # ══════════════════════════════════════════
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print('Client disconnected')
+    username = session.get('username', 'unknown')
+    user_id  = session.get('user_id')
+    print(f'Client disconnected: {username}')
+
+    # Mark user as offline in MongoDB and notify admin page
+    if user_id and session.get('role') != 'admin':
+        users_col.update_one({'_id': user_id}, {'$set': {'online': False, 'socket_id': None}})
+        socketio.emit('operator_status_change', {'user_id': user_id, 'online': False, 'username': username})
 
 
 @socketio.on('connect')
-def handle_socketio_connect():
-    print(f"Socket connected: {session.get('username', 'unknown')}")
+def handle_socketio_connect(auth=None):
+    from flask import request as flask_request
+    username  = session.get('username', 'unknown')
+    user_id   = session.get('user_id')
+    socket_id = flask_request.sid
+    print(f"Socket connected: {username} ({socket_id})")
     emit('message', {'message': 'Welcome from MorseApp Flask!'})
+
+    # Mark user as online and store their socket ID for targeted kicks
+    if user_id and session.get('role') != 'admin':
+        users_col.update_one({'_id': user_id}, {'$set': {'online': True, 'socket_id': socket_id}})
+        emit('operator_status_change', {'user_id': user_id, 'online': True, 'username': username}, broadcast=True)
 
 
 @socketio.on('esp32_message')
 def handle_esp32_message(data):
-    """Handles incoming Morse code messages from the ESP32 glove."""
     print(f"Received from ESP32: {data}")
-    message = decrypt(data['morse'])
+    message   = decrypt(data['morse'])
     device_id = data.get('device_id', 'esp32')
-    color = '#ffb700'
-    time = datetime.datetime.now()
+    color     = '#ffb700'
+    time      = datetime.datetime.now()
 
     collection.insert_one({
-        'rescuer': device_id,
-        'username': 'ESP32 Glove',
-        'message': message,
-        'time': time,
-        'color': color
+        'rescuer':  device_id,
+        'codename': 'ESP32 GLOVE',
+        'message':  message,
+        'time':     time,
+        'color':    color
     })
 
     emit('/new_message', {
-        'rescuer': device_id,
-        'username': 'ESP32 Glove',
-        'message': message,
-        'time': str(time),
-        'color': color
+        'rescuer':  device_id,
+        'codename': 'ESP32 GLOVE',
+        'message':  message,
+        'time':     str(time),
+        'color':    color
     }, broadcast=True)
-    print(f"Stored in MongoDB: {message}")
+    print(f"Stored: {message}")
 
 
 @socketio.on('/message')
 def handle_message(data):
-    """Handles incoming Morse code messages from the browser."""
     if isinstance(data, dict):
         morse     = data.get('morse', '')
         latitude  = data.get('latitude')
@@ -304,13 +528,13 @@ def handle_message(data):
 
     message  = decrypt(morse)
     user_id  = session.get('user_id', str(uuid.uuid4()))
-    username = session.get('username', 'Unknown')
+    codename = session.get('codename', 'UNKNOWN')
     color    = session.get('color', '#00ff41')
     time     = datetime.datetime.now()
 
     doc = {
         'rescuer':  user_id,
-        'username': username,
+        'codename': codename,
         'message':  message,
         'time':     time,
         'color':    color
@@ -322,10 +546,9 @@ def handle_message(data):
 
     collection.insert_one(doc)
 
-    # Broadcast to ALL clients including sender
     emit('/new_message', {
         'rescuer':   user_id,
-        'username':  username,
+        'codename':  codename,
         'message':   message,
         'time':      str(time),
         'color':     color,
@@ -333,7 +556,7 @@ def handle_message(data):
         'longitude': longitude
     }, broadcast=True)
 
-    print(f"Received: {morse} | Translated: {message} | User: {username} | Location: {latitude}, {longitude}")
+    print(f"Received: {morse} | Translated: {message} | Codename: {codename}")
 
 
 if __name__ == '__main__':
