@@ -22,12 +22,17 @@ try:
 except Exception as e:
     print(e)
 
-db         = client['Secret']
-collection = db['morese_code']
-users_col  = db['users']
+db           = client['Secret']
+collection   = db['morese_code']
+users_col    = db['users']
+locations_col = db['operator_locations']  # One entry per user, updated in place
 
 all_message = list(collection.find())
 last_id = all_message[-1]["_id"] if all_message else None
+
+# ── Ping Configuration ──
+# Change this value to adjust how often the server pings all connected devices
+PING_INTERVAL_SECONDS = 30
 
 # ── NATO Phonetic Alphabet ──
 NATO = [
@@ -462,6 +467,22 @@ def connect_user():
 # SOCKET.IO
 # ══════════════════════════════════════════
 
+# ── Ping background thread ──
+# Sends a silent PING to all connected devices every PING_INTERVAL_SECONDS.
+# The ping is ignored by the web interface — it's just to keep connections alive.
+import threading
+
+def ping_loop():
+    while True:
+        import time
+        time.sleep(PING_INTERVAL_SECONDS)
+        socketio.emit('ping_devices', {'type': 'PING'})
+        print(f"Ping sent to all devices (interval: {PING_INTERVAL_SECONDS}s)")
+
+ping_thread = threading.Thread(target=ping_loop, daemon=True)
+ping_thread.start()
+
+
 @socketio.on('disconnect')
 def handle_disconnect():
     username = session.get('username', 'unknown')
@@ -545,6 +566,20 @@ def handle_message(data):
         doc['longitude'] = longitude
 
     collection.insert_one(doc)
+
+    # Update operator location table if coordinates were provided
+    if latitude is not None and longitude is not None:
+        locations_col.update_one(
+            {'_id': user_id},
+            {'$set': {
+                '_id':       user_id,
+                'codename':  codename,
+                'latitude':  latitude,
+                'longitude': longitude,
+                'updated_at': datetime.datetime.now()
+            }},
+            upsert=True  # Insert if not exists, update if it does
+        )
 
     emit('/new_message', {
         'rescuer':   user_id,
