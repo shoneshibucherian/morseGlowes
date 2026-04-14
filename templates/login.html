@@ -598,6 +598,289 @@
             color: var(--dim);
             letter-spacing: 0.05em;
         }
+
+        /* ── REJECTION SEQUENCE ── */
+
+        /* Page shake */
+        @keyframes shake {
+            0%   { transform: translateX(0); }
+            10%  { transform: translateX(-14px) rotate(-1.5deg); }
+            20%  { transform: translateX(14px) rotate(1.5deg); }
+            30%  { transform: translateX(-12px) rotate(-1deg); }
+            40%  { transform: translateX(12px) rotate(1deg); }
+            50%  { transform: translateX(-8px); }
+            60%  { transform: translateX(8px); }
+            70%  { transform: translateX(-4px); }
+            80%  { transform: translateX(4px); }
+            90%  { transform: translateX(-2px); }
+            100% { transform: translateX(0); }
+        }
+
+        /* Glitch displacement effect */
+        @keyframes glitch {
+            0%   { clip-path: inset(0 0 95% 0); transform: translate(-4px, 0); }
+            10%  { clip-path: inset(30% 0 50% 0); transform: translate(4px, 0); }
+            20%  { clip-path: inset(60% 0 20% 0); transform: translate(-2px, 0); }
+            30%  { clip-path: inset(10% 0 80% 0); transform: translate(6px, 0); }
+            40%  { clip-path: inset(50% 0 30% 0); transform: translate(-4px, 0); }
+            50%  { clip-path: inset(80% 0 5% 0);  transform: translate(2px, 0); }
+            60%  { clip-path: inset(20% 0 60% 0); transform: translate(-6px, 0); }
+            70%  { clip-path: inset(70% 0 15% 0); transform: translate(4px, 0); }
+            80%  { clip-path: inset(40% 0 40% 0); transform: translate(-2px, 0); }
+            90%  { clip-path: inset(5% 0 85% 0);  transform: translate(6px, 0); }
+            100% { clip-path: inset(0 0 95% 0);   transform: translate(0, 0); }
+        }
+
+        /* Red screen flood */
+        @keyframes redFlood {
+            0%   { background-color: #060202; }
+            20%  { background-color: #1a0202; }
+            50%  { background-color: #2a0404; }
+            80%  { background-color: #1a0202; }
+            100% { background-color: #0a0202; }
+        }
+
+        /* Rejection text slam in */
+        @keyframes rejectionTextIn {
+            0%   { opacity: 0; transform: scale(1.4); letter-spacing: 0.5em; }
+            100% { opacity: 1; transform: scale(1); letter-spacing: 0.2em; }
+        }
+
+        /* Rapid flash for icon */
+        @keyframes scanFlash {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
+        }
+
+        /* Red border pulse on terminal */
+        @keyframes redBorderPulse {
+            0%, 100% { box-shadow: 0 0 0 1px #ff3b3b, 0 0 30px rgba(255,59,59,0.4); }
+            50%       { box-shadow: 0 0 0 1px #ff3b3b, 0 0 60px rgba(255,59,59,0.8), 0 0 100px rgba(255,59,59,0.3); }
+        }
+
+        /* Glitch overlay bars */
+        .glitch-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9996;
+            display: none;
+        }
+
+        .glitch-overlay.active {
+            display: block;
+        }
+
+        .glitch-bar {
+            position: absolute;
+            left: 0; right: 0;
+            background: rgba(255, 59, 59, 0.12);
+            animation: glitchBar 0.15s steps(1) infinite;
+        }
+
+        @keyframes glitchBar {
+            0%   { top: 10%; height: 3px; opacity: 1; }
+            20%  { top: 45%; height: 8px; opacity: 0.8; }
+            40%  { top: 70%; height: 2px; opacity: 1; }
+            60%  { top: 25%; height: 5px; opacity: 0.6; }
+            80%  { top: 85%; height: 4px; opacity: 1; }
+            100% { top: 55%; height: 6px; opacity: 0.7; }
+        }
+
+        body.rejected {
+            animation: redFlood 0.8s ease forwards;
+        }
+
+        .terminal.rejected {
+            animation: shake 0.5s ease, redBorderPulse 1s ease 0.5s infinite;
+            border-color: #ff3b3b !important;
+        }
+
+        /* Boot lines turning red/failed */
+        .boot-line.fail {
+            color: #ff3b3b !important;
+        }
+
+        .boot-line.fail .boot-ok {
+            color: #ff3b3b !important;
+        }
+
+        .rejection-screen {
+            text-align: center;
+            padding: 10px 0;
+        }
+
+        .rejection-icon {
+            font-size: 3rem;
+            color: #ff3b3b;
+            display: block;
+            margin-bottom: 12px;
+            animation: scanFlash 0.2s step-end 6;
+            text-shadow: 0 0 30px rgba(255,59,59,1);
+        }
+
+        .rejection-title {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.6rem;
+            font-weight: 900;
+            color: #ff3b3b;
+            letter-spacing: 0.2em;
+            animation: rejectionTextIn 0.4s ease 0.3s both;
+            text-shadow: 0 0 20px rgba(255,59,59,1), 0 0 40px rgba(255,59,59,0.6);
+        }
+
+        .rejection-subtitle {
+            font-size: 0.82rem;
+            color: #ff3b3b;
+            letter-spacing: 0.25em;
+            margin-top: 8px;
+            animation: rejectionTextIn 0.4s ease 0.5s both;
+        }
+
+        .rejection-code {
+            font-size: 0.65rem;
+            color: #aa3030;
+            letter-spacing: 0.12em;
+            margin-top: 16px;
+            padding: 12px;
+            border: 1px solid #5a1010;
+            border-radius: 3px;
+            background: rgba(255,59,59,0.04);
+            animation: rejectionTextIn 0.4s ease 0.7s both;
+            line-height: 2;
+            text-align: left;
+        }
+
+        .rejection-retry {
+            margin-top: 20px;
+            padding: 11px;
+            background: transparent;
+            border: 1px solid #ff3b3b;
+            border-radius: 3px;
+            color: #ff3b3b;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.82rem;
+            letter-spacing: 0.15em;
+            cursor: pointer;
+            animation: rejectionTextIn 0.4s ease 1.2s both;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        .rejection-retry:hover {
+            background: rgba(255,59,59,0.08);
+            box-shadow: 0 0 16px rgba(255,59,59,0.4);
+        }
+
+
+        /* ══════════════════════════════════════════
+           MOBILE RESPONSIVE — LOGIN PAGE
+           ══════════════════════════════════════════ */
+        @media (max-width: 768px) {
+
+            /* Hide corner decorations and boot sequence on mobile */
+            .corner { display: none; }
+            .boot-sequence { display: none; }
+
+            /* Hide radar on mobile for performance */
+            .radar-container { display: none; }
+
+            /* Terminal fills most of the screen */
+            .terminal {
+                width: 95vw;
+                margin: 10px auto;
+            }
+
+            .terminal-body {
+                padding: 18px 16px 22px;
+            }
+
+            /* Smaller logo */
+            .app-logo-icon {
+                font-size: 1.6rem;
+            }
+
+            .app-logo h1 {
+                font-size: 1.0rem;
+                letter-spacing: 0.12em;
+            }
+
+            .app-logo p {
+                font-size: 0.6rem;
+            }
+
+            .app-logo {
+                margin-bottom: 18px;
+            }
+
+            /* Tabs */
+            .tab-btn {
+                font-size: 0.68rem;
+                padding: 8px;
+                letter-spacing: 0.08em;
+            }
+
+            /* Fields */
+            .field label {
+                font-size: 0.65rem;
+            }
+
+            .field input[type="text"],
+            .field input[type="password"] {
+                font-size: 0.85rem;
+                padding: 10px 12px;
+            }
+
+            /* Color swatches — more compact */
+            .swatch {
+                width: 24px;
+                height: 24px;
+            }
+
+            .color-swatches {
+                gap: 6px;
+            }
+
+            /* Submit button */
+            .submit-btn {
+                font-size: 0.78rem;
+                padding: 12px;
+            }
+
+            /* Status bar smaller */
+            .status-bar {
+                font-size: 0.58rem;
+                padding: 4px 12px;
+            }
+
+            /* Error/success message */
+            .msg {
+                font-size: 0.68rem;
+            }
+
+            /* PIN dots */
+            .pin-dot {
+                width: 9px;
+                height: 9px;
+            }
+        }
+
+        /* Extra small phones */
+        @media (max-width: 400px) {
+            .terminal {
+                width: 98vw;
+            }
+
+            .app-logo h1 {
+                font-size: 0.88rem;
+            }
+
+            .tab-btn {
+                font-size: 0.6rem;
+                letter-spacing: 0.04em;
+            }
+        }
+
     </style>
 </head>
 <body>
@@ -607,6 +890,11 @@
 
 <!-- Noise texture overlay -->
 <div class="noise"></div>
+
+<!-- Glitch overlay bars — activated during rejection sequence -->
+<div class="glitch-overlay" id="glitchOverlay">
+    <div class="glitch-bar"></div>
+</div>
 
 <!-- Radar sweep effect -->
 <div class="radar-container">
@@ -799,6 +1087,63 @@
         el.textContent = '';
     }
 
+    // ── PENDING SCREEN ──
+    // Shown after registration while waiting for admin approval.
+    // Polls /check_status every 5 seconds and auto-redirects when approved.
+    let pollInterval = null;
+    let pendingUsername = null;
+
+    function showPendingScreen(username) {
+        pendingUsername = username;
+        document.querySelector('.terminal-body').innerHTML = `
+            <div class="app-logo">
+                <span class="app-logo-icon" style="animation:none;font-size:2rem;">⏳</span>
+                <h1>AWAITING CLEARANCE</h1>
+                <p>Your request has been submitted to OVERLORD</p>
+            </div>
+            <div style="margin-top:20px;padding:16px;border:1px solid var(--border-bright);border-radius:3px;background:var(--bg);">
+                <div style="font-size:0.72rem;color:var(--text-dim);letter-spacing:0.1em;margin-bottom:8px;">OPERATOR</div>
+                <div style="font-size:1rem;color:var(--green);letter-spacing:0.08em;">${username}</div>
+            </div>
+            <div style="margin-top:16px;font-size:0.72rem;color:var(--text-dim);letter-spacing:0.05em;line-height:1.8;padding:12px;border:1px solid var(--border-bright);border-radius:3px;">
+                <span style="color:var(--amber)">⬡ STATUS:</span> Pending admin approval<br>
+                <span style="color:var(--amber)">⬡ ACTION:</span> This page will automatically redirect when approved<br>
+                <span style="color:var(--amber)">⬡ POLLING:</span> Checking every 5 seconds <span class="cursor"></span>
+            </div>
+        `;
+        // Start polling
+        pollInterval = setInterval(() => checkApprovalStatus(username), 5000);
+    }
+
+    async function checkApprovalStatus(username) {
+        try {
+            const res  = await fetch(`/check_status?username=${encodeURIComponent(username)}`);
+            const data = await res.json();
+            if (data.status === 'approved') {
+                clearInterval(pollInterval);
+                // Auto-login now that they're approved — redirect to login
+                window.location.href = '/login?approved=1&username=' + encodeURIComponent(username);
+            } else if (data.status === 'rejected') {
+                clearInterval(pollInterval);
+                triggerRejectionSequence();
+            }
+        } catch (err) {
+            console.error('Poll error:', err);
+        }
+    }
+
+    // If redirected back after approval, pre-fill username
+    window.addEventListener('load', () => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('approved') === '1') {
+            const username = params.get('username');
+            if (username) {
+                document.getElementById('loginUsername').value = username;
+                showMsg('✔ Account approved! Enter your PIN to login.', 'success');
+            }
+        }
+    });
+
     // ── LOGIN ──
     async function handleLogin() {
         const username = document.getElementById('loginUsername').value.trim();
@@ -810,7 +1155,7 @@
         }
 
         try {
-            const res = await fetch('/login', {
+            const res  = await fetch('/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
@@ -820,7 +1165,12 @@
 
             if (res.ok) {
                 showMsg('✔ Authentication successful. Redirecting...', 'success');
-                setTimeout(() => window.location.href = '/', 1000);
+                setTimeout(() => window.location.href = data.redirect || '/', 1000);
+            } else if (data.status === 'pending') {
+                // Show pending screen with polling
+                showPendingScreen(data.username || username);
+            } else if (res.status === 403 && data.error && data.error.includes('rejected')) {
+                triggerRejectionSequence();
             } else {
                 showMsg('⚠ ' + (data.error || 'Invalid credentials.'), 'error');
             }
@@ -859,8 +1209,8 @@
             const data = await res.json();
 
             if (res.ok) {
-                showMsg('✔ Account created! Redirecting...', 'success');
-                setTimeout(() => window.location.href = '/', 1000);
+                // Show pending screen instead of redirecting
+                showPendingScreen(data.username || username);
             } else {
                 showMsg('⚠ ' + (data.error || 'Registration failed.'), 'error');
             }
@@ -879,6 +1229,66 @@
             }
         }
     });
+
+    // ── REJECTION SEQUENCE ──
+    function triggerRejectionSequence() {
+        const terminal     = document.querySelector('.terminal');
+        const body         = document.body;
+        const bootLines    = document.querySelectorAll('.boot-line');
+        const radarLine    = document.querySelector('.radar-line');
+        const radarGlow    = document.querySelector('.radar-glow');
+        const glitchOverlay = document.getElementById('glitchOverlay');
+
+        // Step 1: Boot lines start failing one by one
+        const failMessages = [
+            'CHECKING HARDWARE INTERFACES... <span style="color:#ff3b3b">FAILED</span>',
+            'LOADING ENCRYPTION MODULES... <span style="color:#ff3b3b">ERROR</span>',
+            'ESTABLISHING SECURE CHANNEL... <span style="color:#ff3b3b">TERMINATED</span>',
+            'MONGODB CONNECTION... <span style="color:#ff3b3b">LOST</span>',
+            'AWAITING OPERATOR AUTHENTICATION <span style="color:#ff3b3b">ACCESS DENIED</span>',
+        ];
+
+        bootLines.forEach((line, i) => {
+            setTimeout(() => {
+                line.classList.add('fail');
+                if (failMessages[i]) line.innerHTML = failMessages[i];
+            }, i * 120);
+        });
+
+        // Step 2: Stop radar sweep and start glitching
+        setTimeout(() => {
+            if (radarLine) radarLine.style.animation = 'none';
+            if (radarGlow) radarGlow.style.animation = 'none';
+            glitchOverlay.classList.add('active');
+        }, 400);
+
+        // Step 3: Page turns red, terminal shakes
+        setTimeout(() => {
+            body.classList.add('rejected');
+            terminal.classList.add('rejected');
+        }, 600);
+
+        // Step 4: Show rejection screen (keep glitch overlay running)
+        setTimeout(() => {
+            document.querySelector('.terminal-body').innerHTML = `
+                <div class="rejection-screen">
+                    <span class="rejection-icon">⛔</span>
+                    <div class="rejection-title">ACCESS DENIED</div>
+                    <div class="rejection-subtitle">⚠ INTRUDER DETECTED ⚠</div>
+                    <div class="rejection-code">
+                        ERROR CODE &nbsp;&nbsp;: 403-UNAUTHORIZED<br>
+                        STATUS &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: REQUEST REJECTED BY OVERLORD<br>
+                        WARNING &nbsp;&nbsp;&nbsp;&nbsp;: THIS INCIDENT HAS BEEN LOGGED<br>
+                        THREAT LEVEL : <span style="color:#ff3b3b;font-weight:bold;">HIGH</span>
+                    </div>
+                    <button class="rejection-retry" onclick="window.location.reload()">
+                        ▶ RETURN TO LOGIN TERMINAL
+                    </button>
+                </div>
+            `;
+        }, 1400);
+    }
+
 </script>
 
 </body>

@@ -1,0 +1,2071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OVERLORD // COMMAND CENTER</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <style>
+        :root {
+            --red: #ff4444;
+            --red-dim: #cc2222;
+            --red-glow: rgba(255,59,59,0.15);
+            --green: #00ff41;
+            --green-dim: #00a82b;
+            --amber: #ffb700;
+            --bg: #080202;
+            --panel: #110404;
+            --panel2: #160505;
+            --border: #3a0a0a;
+            --border-bright: #551515;
+            --dim: #7a2a2a;
+            --text-dim: #aa4444;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--red);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* ── ANIMATED GRID ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,59,59,0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,59,59,0.025) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── CRT SCANLINES ── */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg, transparent, transparent 2px,
+                rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* ── HEADER ── */
+        header {
+            background: var(--panel);
+            border-bottom: 1px solid var(--border-bright);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+            z-index: 100;
+            box-shadow: 0 0 30px rgba(255,59,59,0.08);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+
+
+        .header-title h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.2rem;
+            font-weight: 900;
+            letter-spacing: 0.2em;
+            text-shadow: 0 0 20px var(--red);
+        }
+
+        .header-title p {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            letter-spacing: 0.3em;
+            margin-top: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+        }
+
+        .stat-badge {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 6px 14px;
+            border: 1px solid var(--border-bright);
+            border-radius: 3px;
+            background: var(--panel2);
+            min-width: 70px;
+        }
+
+        .stat-badge .stat-num {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .stat-badge .stat-label {
+            font-size: 0.58rem;
+            letter-spacing: 0.15em;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .stat-badge.pending .stat-num { color: var(--amber); }
+        .stat-badge.approved .stat-num { color: var(--green); }
+        .stat-badge.rejected .stat-num { color: var(--red); }
+
+        .logout-btn {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.72rem;
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid var(--border-bright);
+            color: var(--text-dim);
+            cursor: pointer;
+            letter-spacing: 0.1em;
+            border-radius: 3px;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            border-color: var(--red);
+            color: var(--red);
+            background: rgba(255,59,59,0.05);
+        }
+
+        /* ── MAIN ── */
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            padding: 16px;
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* ── PANELS ── */
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border-bright);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-bright);
+            background: var(--panel2);
+            border-radius: 4px 4px 0 0;
+        }
+
+        .panel-label {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            color: var(--text-dim);
+        }
+
+        .panel-badge {
+            font-size: 0.68rem;
+            letter-spacing: 0.1em;
+        }
+
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: calc(50vh - 80px);
+        }
+
+        .panel-body::-webkit-scrollbar { width: 4px; }
+        .panel-body::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+        /* ── USER CARDS ── */
+        .user-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border: 1px solid var(--border-bright);
+            border-radius: 3px;
+            background: var(--bg);
+            animation: cardIn 0.3s ease;
+        }
+
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateX(-8px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        /* Color dot */
+        .user-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .user-info {
+            flex: 1;
+        }
+
+        .user-name {
+            font-size: 0.85rem;
+            color: var(--red);
+            letter-spacing: 0.05em;
+        }
+
+        .user-meta {
+            font-size: 0.62rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        /* Codename badge on approved cards */
+        .codename-badge {
+            font-size: 0.7rem;
+            color: var(--green);
+            background: rgba(0,255,65,0.05);
+            border: 1px solid var(--green-dim);
+            padding: 3px 8px;
+            border-radius: 3px;
+            letter-spacing: 0.08em;
+            font-family: 'Orbitron', monospace;
+        }
+
+        .user-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-approve, .btn-reject {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.68rem;
+            padding: 5px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid;
+            letter-spacing: 0.1em;
+            transition: all 0.15s ease;
+        }
+
+        .btn-approve {
+            border-color: var(--green-dim);
+            color: var(--green);
+            background: rgba(0,255,65,0.04);
+        }
+
+        .btn-approve:hover {
+            background: rgba(0,255,65,0.12);
+            box-shadow: 0 0 10px rgba(0,255,65,0.2);
+        }
+
+        .btn-reject {
+            border-color: var(--border-bright);
+            color: var(--text-dim);
+            background: transparent;
+        }
+
+        .btn-reject:hover {
+            border-color: var(--red);
+            color: var(--red);
+            background: rgba(255,59,59,0.05);
+        }
+
+        /* Status tag for approved/rejected */
+        .status-tag {
+            font-size: 0.62rem;
+            padding: 3px 8px;
+            border-radius: 3px;
+            letter-spacing: 0.08em;
+        }
+
+        .status-tag.online {
+            color: var(--green);
+            background: rgba(0,255,65,0.05);
+            border: 1px solid var(--green-dim);
+        }
+
+        .status-tag.offline {
+            color: var(--red);
+            background: rgba(255,59,59,0.05);
+            border: 1px solid var(--red-dim);
+        }
+
+        .status-tag.approved {
+            color: var(--green);
+            background: rgba(0,255,65,0.05);
+            border: 1px solid var(--green-dim);
+        }
+
+        .status-tag.rejected {
+            color: var(--red);
+            background: rgba(255,59,59,0.05);
+            border: 1px solid var(--red-dim);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.78rem;
+            margin: auto;
+            padding: 20px;
+            letter-spacing: 0.1em;
+        }
+
+        /* ── CLOCK ── */
+        .clock {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+        }
+
+        /* ── FOOTER ── */
+        footer {
+            background: var(--panel);
+            border-top: 1px solid var(--border-bright);
+            padding: 6px 20px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.62rem;
+            color: var(--text-dim);
+            position: relative;
+            z-index: 100;
+        }
+
+        .footer-dot {
+            display: inline-block;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--red);
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* ── TOAST NOTIFICATION ── */
+        .toast {
+            position: fixed;
+            bottom: 40px;
+            right: 20px;
+            background: var(--panel2);
+            border: 1px solid var(--border-bright);
+            border-radius: 4px;
+            padding: 12px 18px;
+            font-size: 0.78rem;
+            max-width: 320px;
+            z-index: 10000;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            animation: toastIn 0.3s ease;
+            display: none;
+        }
+
+        .toast.show { display: block; }
+        .toast.success { border-color: var(--green-dim); color: var(--green); }
+        .toast.error   { border-color: var(--red); color: var(--red); }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ══════════════════════════════════════════
+           WELCOME SPLASH — ADMIN (RED THEME)
+           ══════════════════════════════════════════ */
+        .splash-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            z-index: 99000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            transition: opacity 0.8s ease;
+        }
+
+        .splash-screen.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .splash-inner {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            width: 600px;
+            max-width: 90vw;
+        }
+
+        .splash-boot {
+            width: 100%;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            letter-spacing: 0.12em;
+            line-height: 2;
+            min-height: 120px;
+        }
+
+        .splash-boot-line {
+            opacity: 0;
+            animation: splashLineIn 0.1s forwards;
+            white-space: nowrap;
+        }
+
+        @keyframes splashLineIn { to { opacity: 1; } }
+
+        .splash-boot-ok { color: var(--red); }
+
+        .splash-bar {
+            width: 100%;
+            height: 1px;
+            background: var(--red);
+            transform: scaleX(0);
+            transform-origin: left;
+            box-shadow: 0 0 10px var(--red);
+        }
+
+        .splash-bar.expand {
+            animation: barExpand 0.5s ease forwards;
+        }
+
+        @keyframes barExpand { to { transform: scaleX(1); } }
+
+        .splash-codename {
+            font-family: 'Orbitron', monospace;
+            font-size: 3.2rem;
+            font-weight: 900;
+            color: var(--red);
+            letter-spacing: 0.25em;
+            text-align: center;
+            text-shadow: 0 0 30px var(--red),
+                         0 0 60px rgba(255,59,59,0.4),
+                         0 0 100px rgba(255,59,59,0.2);
+            opacity: 0;
+            transform: scale(1.3);
+        }
+
+        .splash-codename.slam {
+            animation: codenameSlam 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        @keyframes codenameSlam {
+            0%   { opacity: 0; transform: scale(1.4); letter-spacing: 0.6em; }
+            60%  { opacity: 1; transform: scale(0.97); letter-spacing: 0.2em; }
+            100% { opacity: 1; transform: scale(1); letter-spacing: 0.25em; }
+        }
+
+        .splash-welcome {
+            font-size: 0.88rem;
+            color: var(--red-dim);
+            letter-spacing: 0.4em;
+            text-transform: uppercase;
+            opacity: 0;
+            text-align: center;
+        }
+
+        .splash-welcome.fade-in {
+            animation: splashWelcomeIn 0.6s ease forwards;
+        }
+
+        @keyframes splashWelcomeIn {
+            0%   { opacity: 0; letter-spacing: 0.8em; }
+            100% { opacity: 1; letter-spacing: 0.4em; }
+        }
+
+        .splash-screen::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg, transparent, transparent 2px,
+                rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px
+            );
+            pointer-events: none;
+        }
+
+
+        /* ══════════════════════════════════════════
+           MOBILE RESPONSIVE — ADMIN PAGE
+           ══════════════════════════════════════════ */
+        @media (max-width: 768px) {
+
+            /* Header stacks vertically */
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+                padding: 10px 14px;
+            }
+
+            .header-title h1 {
+                font-size: 1.0rem;
+            }
+
+            .header-title p {
+                font-size: 0.6rem;
+            }
+
+            /* Stats wrap into two rows */
+            .header-right {
+                flex-wrap: wrap;
+                gap: 8px;
+                width: 100%;
+            }
+
+            .stat-badge {
+                min-width: 55px;
+                padding: 4px 10px;
+            }
+
+            .stat-badge .stat-num {
+                font-size: 1.0rem;
+            }
+
+            .stat-badge .stat-label {
+                font-size: 0.5rem;
+            }
+
+            .logout-btn {
+                font-size: 0.65rem;
+                padding: 6px 12px;
+            }
+
+            .clock {
+                font-size: 0.62rem;
+            }
+
+            /* Stack panels vertically instead of side by side */
+            main {
+                grid-template-columns: 1fr;
+                padding: 10px;
+                gap: 10px;
+            }
+
+            .panel-body {
+                max-height: 300px;
+            }
+
+            /* User cards more compact */
+            .user-card {
+                padding: 8px 10px;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+
+            .user-name {
+                font-size: 0.78rem;
+            }
+
+            .user-meta {
+                font-size: 0.58rem;
+            }
+
+            .btn-approve, .btn-reject {
+                font-size: 0.62rem;
+                padding: 4px 10px;
+            }
+
+            .codename-badge {
+                font-size: 0.62rem;
+                padding: 2px 6px;
+            }
+
+            .status-tag {
+                font-size: 0.58rem;
+                padding: 2px 6px;
+            }
+
+            /* Footer smaller */
+            footer {
+                font-size: 0.55rem;
+                padding: 4px 12px;
+            }
+
+            /* Panel labels */
+            .panel-label {
+                font-size: 0.6rem;
+            }
+
+            .panel-badge {
+                font-size: 0.6rem;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .header-title h1 {
+                font-size: 0.88rem;
+            }
+
+            .stat-badge {
+                min-width: 48px;
+            }
+        }
+
+
+        /* ══════════════════════════════════════════
+           TABS — OPERATORS / COMMAND
+           ══════════════════════════════════════════ */
+        .tab-nav {
+            display: flex;
+            border-bottom: 1px solid var(--border-bright);
+            background: var(--panel2);
+            position: relative;
+            z-index: 100;
+        }
+
+        .tab-nav-btn {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.78rem;
+            letter-spacing: 0.15em;
+            padding: 12px 28px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+        }
+
+        .tab-nav-btn:hover {
+            color: var(--red);
+        }
+
+        .tab-nav-btn.active {
+            color: var(--red);
+            border-bottom-color: var(--red);
+            background: rgba(255,68,68,0.05);
+        }
+
+        /* Tab content panels */
+        .tab-content {
+            display: none;
+            flex: 1;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ══════════════════════════════════════════
+           COMMAND TAB — GRAFANA + MESSAGING
+           ══════════════════════════════════════════ */
+
+        /* Grafana grid — 2x2 */
+        .grafana-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 12px;
+            padding: 12px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .grafana-panel {
+            background: var(--panel);
+            border: 1px solid var(--border-bright);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 160px;
+        }
+
+        .grafana-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 12px;
+            background: var(--panel2);
+            border-bottom: 1px solid var(--border-bright);
+            flex-shrink: 0;
+        }
+
+        .grafana-panel-label {
+            font-size: 0.65rem;
+            font-family: 'Orbitron', monospace;
+            letter-spacing: 0.15em;
+            color: var(--text-dim);
+        }
+
+        .grafana-panel iframe {
+            flex: 1;
+            width: 100%;
+            border: none;
+            background: var(--bg);
+        }
+
+        /* Placeholder shown before real Grafana URL is set */
+        .grafana-placeholder {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 8px;
+            color: var(--text-dim);
+            font-size: 0.72rem;
+            letter-spacing: 0.1em;
+        }
+
+        .grafana-placeholder-icon {
+            font-size: 1.8rem;
+            opacity: 0.4;
+        }
+
+        /* ══════════════════════════════════════════
+           ADMIN MESSAGING
+           ══════════════════════════════════════════ */
+        .command-bottom {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            padding: 0 12px 12px;
+        }
+
+        /* Message feed */
+        .admin-feed {
+            background: var(--panel);
+            border: 1px solid var(--border-bright);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            height: 220px;
+        }
+
+        .admin-feed .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 14px;
+            border-bottom: 1px solid var(--border-bright);
+            background: var(--panel2);
+            border-radius: 4px 4px 0 0;
+            flex-shrink: 0;
+        }
+
+        .admin-feed-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .admin-feed-body::-webkit-scrollbar { width: 4px; }
+        .admin-feed-body::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+        .admin-msg-item {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 0.82rem;
+            padding: 4px 0;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        .admin-msg-codename {
+            font-size: 0.78rem;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .admin-msg-text {
+            color: var(--text-dim);
+            flex: 1;
+        }
+
+        .admin-msg-time {
+            font-size: 0.62rem;
+            color: var(--dim);
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        /* Admin input box */
+        .admin-input-box {
+            background: var(--panel);
+            border: 1px solid var(--border-bright);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            height: 220px;
+        }
+
+        .admin-input-box .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 14px;
+            border-bottom: 1px solid var(--border-bright);
+            background: var(--panel2);
+            border-radius: 4px 4px 0 0;
+            flex-shrink: 0;
+        }
+
+        .admin-input-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 8px;
+        }
+
+        .admin-directions {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            padding: 6px 10px;
+            border: 1px solid var(--border-bright);
+            border-radius: 3px;
+            background: var(--bg);
+            letter-spacing: 0.05em;
+        }
+
+        .admin-directions span { color: var(--red); font-weight: bold; }
+
+        .admin-morse-display {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--border-bright);
+            border-radius: 3px;
+            padding: 8px 12px;
+            font-size: 1.1rem;
+            color: var(--red);
+            letter-spacing: 0.15em;
+            text-shadow: 0 0 8px rgba(255,68,68,0.4);
+            word-break: break-all;
+            overflow-y: auto;
+            min-height: 40px;
+            outline: none;
+            cursor: text;
+        }
+
+        .admin-morse-display:focus {
+            border-color: var(--red-dim);
+            box-shadow: 0 0 10px rgba(255,68,68,0.1);
+        }
+
+        .admin-morse-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            background: var(--red);
+            margin-left: 2px;
+            vertical-align: middle;
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%,100% { opacity:1; }
+            50% { opacity:0; }
+        }
+
+        .admin-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .admin-hint {
+            font-size: 0.65rem;
+            color: var(--dim);
+            flex: 1;
+        }
+
+        .btn-admin {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.72rem;
+            letter-spacing: 0.1em;
+            padding: 6px 14px;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid;
+            transition: all 0.15s ease;
+            text-transform: uppercase;
+        }
+
+        .btn-admin-clear {
+            border-color: var(--text-dim);
+            color: var(--text-dim);
+            background: transparent;
+        }
+
+        .btn-admin-clear:hover {
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        .btn-admin-send {
+            border-color: var(--red-dim);
+            color: var(--red);
+            background: rgba(255,68,68,0.05);
+        }
+
+        .btn-admin-send:hover {
+            background: rgba(255,68,68,0.12);
+            box-shadow: 0 0 10px rgba(255,68,68,0.2);
+        }
+
+        /* Keypad in command tab */
+        .admin-keypad-panel {
+            background: var(--panel);
+            border: 1px solid var(--border-bright);
+            border-radius: 4px;
+            margin: 0 12px 12px;
+        }
+
+        .admin-keypad-panel .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 14px;
+            border-bottom: 1px solid var(--border-bright);
+            background: var(--panel2);
+            border-radius: 4px 4px 0 0;
+        }
+
+        .admin-keypad-body {
+            padding: 10px;
+            overflow-y: auto;
+            max-height: 160px;
+        }
+
+        .admin-keypad-body::-webkit-scrollbar { width: 4px; }
+        .admin-keypad-body::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+        .admin-keypad-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(65px, 1fr));
+            gap: 5px;
+        }
+
+        .admin-key-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 7px 4px;
+            border: 1px solid var(--border-bright);
+            border-radius: 3px;
+            background: var(--bg);
+            transition: all 0.15s ease;
+        }
+
+        .admin-key-item.active {
+            border-color: var(--red);
+            background: rgba(255,68,68,0.06);
+        }
+
+        .admin-key-item.faded {
+            opacity: 0.15;
+        }
+
+        .admin-key-char {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--red);
+        }
+
+        .admin-key-morse {
+            font-size: 0.62rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+            letter-spacing: 0.08em;
+        }
+
+        .admin-key-item.active .admin-key-morse { color: var(--red-dim); }
+
+        /* Mobile command tab */
+        @media (max-width: 768px) {
+
+            /* Tab buttons */
+            .tab-nav-btn {
+                font-size: 0.68rem;
+                padding: 10px 16px;
+                letter-spacing: 0.08em;
+            }
+
+            /* Grafana panels stack into single column */
+            .grafana-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto;
+                padding: 8px;
+                gap: 8px;
+            }
+
+            /* Each grafana panel shorter on mobile */
+            .grafana-panel {
+                min-height: 130px;
+            }
+
+            .grafana-placeholder {
+                font-size: 0.65rem;
+            }
+
+            .grafana-placeholder-icon {
+                font-size: 1.4rem;
+            }
+
+            /* Feed and input stack vertically */
+            .command-bottom {
+                grid-template-columns: 1fr;
+                padding: 0 8px 8px;
+                gap: 8px;
+            }
+
+            /* Shorter feed and input on mobile */
+            .admin-feed {
+                height: 180px;
+            }
+
+            .admin-input-box {
+                height: auto;
+                min-height: 160px;
+            }
+
+            /* Smaller message items */
+            .admin-msg-item {
+                font-size: 0.75rem;
+            }
+
+            .admin-msg-codename {
+                font-size: 0.72rem;
+            }
+
+            .admin-msg-time {
+                font-size: 0.58rem;
+            }
+
+            /* Input directions smaller */
+            .admin-directions {
+                font-size: 0.62rem;
+                padding: 5px 8px;
+            }
+
+            /* Morse display */
+            .admin-morse-display {
+                font-size: 0.95rem;
+                padding: 6px 10px;
+                min-height: 35px;
+            }
+
+            /* Buttons */
+            .btn-admin {
+                font-size: 0.65rem;
+                padding: 5px 10px;
+            }
+
+            .admin-hint {
+                font-size: 0.6rem;
+            }
+
+            /* Keypad panel */
+            .admin-keypad-panel {
+                margin: 0 8px 8px;
+            }
+
+            .admin-keypad-body {
+                max-height: 130px;
+            }
+
+            .admin-keypad-grid {
+                grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+                gap: 4px;
+            }
+
+            .admin-key-item {
+                padding: 5px 2px;
+            }
+
+            .admin-key-char {
+                font-size: 0.75rem;
+            }
+
+            .admin-key-morse {
+                font-size: 0.55rem;
+            }
+        }
+
+        /* Extra small phones */
+        @media (max-width: 400px) {
+            .grafana-panel {
+                min-height: 110px;
+            }
+
+            .admin-keypad-grid {
+                grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+            }
+        }
+
+
+        /* ── SEARCH BAR ── */
+        .search-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-bright);
+            background: var(--panel2);
+        }
+
+        .search-input {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--border-bright);
+            border-radius: 3px;
+            padding: 5px 10px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--red);
+            outline: none;
+            letter-spacing: 0.05em;
+        }
+
+        .search-input::placeholder { color: var(--dim); }
+        .search-input:focus { border-color: var(--red-dim); }
+
+        /* ── KICK / REVOKE BUTTONS ── */
+        .btn-kick {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.62rem;
+            padding: 3px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid var(--amber);
+            color: var(--amber);
+            background: transparent;
+            transition: all 0.15s;
+            letter-spacing: 0.05em;
+        }
+
+        .btn-kick:hover {
+            background: rgba(255,183,0,0.08);
+        }
+
+        .btn-revoke {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.62rem;
+            padding: 3px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid var(--red-dim);
+            color: var(--red);
+            background: transparent;
+            transition: all 0.15s;
+            letter-spacing: 0.05em;
+        }
+
+        .btn-revoke:hover {
+            background: rgba(255,68,68,0.08);
+        }
+
+        /* ── GRAFANA MODAL ── */
+        .grafana-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .grafana-modal-overlay.open {
+            display: flex;
+        }
+
+        .grafana-modal {
+            background: var(--panel);
+            border: 1px solid var(--border-bright);
+            border-radius: 4px;
+            width: 85vw;
+            height: 75vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 0 60px rgba(255,68,68,0.15);
+        }
+
+        .grafana-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            background: var(--panel2);
+            border-bottom: 1px solid var(--border-bright);
+            flex-shrink: 0;
+        }
+
+        .grafana-modal-title {
+            font-size: 0.72rem;
+            font-family: 'Orbitron', monospace;
+            letter-spacing: 0.15em;
+            color: var(--text-dim);
+        }
+
+        .grafana-modal-close {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 1.1rem;
+            cursor: pointer;
+            font-family: 'Share Tech Mono', monospace;
+            transition: color 0.15s;
+        }
+
+        .grafana-modal-close:hover { color: var(--red); }
+
+        .grafana-modal-body {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .grafana-modal-body iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Make grafana panels look clickable */
+        .grafana-panel {
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+
+        .grafana-panel:hover {
+            border-color: var(--red-dim);
+        }
+
+        /* ── AUTO-SCROLL TOGGLE ── */
+        .toggle-btn {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.65rem;
+            padding: 3px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid var(--border-bright);
+            color: var(--text-dim);
+            background: transparent;
+            transition: all 0.15s;
+            letter-spacing: 0.05em;
+        }
+
+        .toggle-btn.on {
+            border-color: var(--green-dim);
+            color: var(--green);
+            background: rgba(0,255,65,0.05);
+        }
+
+        .toggle-btn:hover { border-color: var(--red-dim); color: var(--red); }
+
+    </style>
+</head>
+<body>
+
+<!-- Welcome Splash -->
+<div class="splash-screen" id="splashScreen">
+    <div class="splash-inner">
+        <div class="splash-boot" id="splashBoot"></div>
+        <div class="splash-bar" id="splashBar"></div>
+        <div class="splash-codename" id="splashCodename"></div>
+        <div class="splash-welcome" id="splashWelcome"></div>
+    </div>
+</div>
+
+<!-- Header -->
+<header>
+    <div class="header-left">
+        <div class="header-title">
+            <h1>OVERLORD</h1>
+            <p>COMMAND CENTER  //  OPERATOR MANAGEMENT</p>
+        </div>
+    </div>
+    <div class="header-right">
+        <div class="stat-badge pending">
+            <span class="stat-num" id="statPending">—</span>
+            <span class="stat-label">PENDING</span>
+        </div>
+        <div class="stat-badge approved">
+            <span class="stat-num" id="statApproved">—</span>
+            <span class="stat-label">APPROVED</span>
+        </div>
+        <div class="stat-badge rejected">
+            <span class="stat-num" id="statRejected">—</span>
+            <span class="stat-label">REJECTED</span>
+        </div>
+        <div class="stat-badge" style="border-color:var(--border-bright)">
+            <span class="stat-num" id="statMessages" style="color:var(--amber)">—</span>
+            <span class="stat-label">MESSAGES</span>
+        </div>
+        <span class="clock" id="clock"></span>
+        <button class="logout-btn" onclick="handleLogout()">⏻ LOGOUT</button>
+    </div>
+</header>
+
+<!-- Tab navigation -->
+<div class="tab-nav">
+    <button class="tab-nav-btn active" onclick="switchTab('operators')">⬡ OPERATORS</button>
+    <button class="tab-nav-btn" onclick="switchTab('command')">⬡ COMMAND</button>
+</div>
+
+<!-- ── TAB 1: OPERATORS ── -->
+<div class="tab-content active" id="tab-operators">
+    <main>
+
+        <!-- LEFT: Pending approval queue -->
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-label">⬡ PENDING APPROVAL</span>
+                <span class="panel-badge" style="color:var(--amber)" id="pendingCount">0 operators</span>
+            </div>
+            <div class="panel-body" id="pendingList">
+                <div class="empty-state">[ NO PENDING REQUESTS ]</div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Approved operators -->
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-label">⬡ OPERATORS</span>
+                <span class="panel-badge" style="color:var(--green)" id="approvedCount">0 operators</span>
+            </div>
+            <!-- Search bar -->
+            <div class="search-bar">
+                <input class="search-input" id="operatorSearch"
+                    placeholder="Search operators..." 
+                    oninput="filterOperators(this.value)">
+            </div>
+            <div class="panel-body" id="approvedList">
+                <div class="empty-state">[ NO OPERATORS ]</div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- ── TAB 2: COMMAND ── -->
+<div class="tab-content" id="tab-command">
+
+    <!-- 2x2 Grafana panels -->
+    <div class="grafana-grid">
+
+        <div class="grafana-panel" onclick="openGrafanaModal('PANEL 1', '')">
+            <div class="grafana-panel-header">
+                <span class="grafana-panel-label">⬡ PANEL 1 — REPLACE WITH GRAFANA URL</span>
+                <span style="font-size:0.6rem;color:var(--text-dim);">⤢ expand</span>
+            </div>
+            <div class="grafana-placeholder">
+                <span class="grafana-placeholder-icon">📊</span>
+                <span>[ GRAFANA PANEL 1 ]</span>
+                <span style="font-size:0.6rem;opacity:0.6;">Replace with iframe embed URL</span>
+            </div>
+        </div>
+
+        <div class="grafana-panel" onclick="openGrafanaModal('PANEL 2', '')">
+            <div class="grafana-panel-header">
+                <span class="grafana-panel-label">⬡ PANEL 2 — REPLACE WITH GRAFANA URL</span>
+                <span style="font-size:0.6rem;color:var(--text-dim);">⤢ expand</span>
+            </div>
+            <div class="grafana-placeholder">
+                <span class="grafana-placeholder-icon">📈</span>
+                <span>[ GRAFANA PANEL 2 ]</span>
+                <span style="font-size:0.6rem;opacity:0.6;">Replace with iframe embed URL</span>
+            </div>
+        </div>
+
+        <div class="grafana-panel" onclick="openGrafanaModal('PANEL 3', '')">
+            <div class="grafana-panel-header">
+                <span class="grafana-panel-label">⬡ PANEL 3 — REPLACE WITH GRAFANA URL</span>
+                <span style="font-size:0.6rem;color:var(--text-dim);">⤢ expand</span>
+            </div>
+            <div class="grafana-placeholder">
+                <span class="grafana-placeholder-icon">🗺️</span>
+                <span>[ GRAFANA PANEL 3 ]</span>
+                <span style="font-size:0.6rem;opacity:0.6;">Replace with iframe embed URL</span>
+            </div>
+        </div>
+
+        <div class="grafana-panel" onclick="openGrafanaModal('PANEL 4', '')">
+            <div class="grafana-panel-header">
+                <span class="grafana-panel-label">⬡ PANEL 4 — REPLACE WITH GRAFANA URL</span>
+                <span style="font-size:0.6rem;color:var(--text-dim);">⤢ expand</span>
+            </div>
+            <div class="grafana-placeholder">
+                <span class="grafana-placeholder-icon">🔋</span>
+                <span>[ GRAFANA PANEL 4 ]</span>
+                <span style="font-size:0.6rem;opacity:0.6;">Replace with iframe embed URL</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Message feed + Input -->
+    <div class="command-bottom">
+
+        <!-- Live message feed -->
+        <div class="admin-feed">
+            <div class="panel-header">
+                <span class="panel-label">⬡ LIVE TRANSMISSIONS</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <button class="toggle-btn on" id="autoScrollBtn" onclick="toggleAutoScroll()">↓ AUTO</button>
+                    <button class="btn-admin btn-admin-clear" onclick="clearAdminFeed()" style="padding:3px 8px;font-size:0.62rem;">Clear</button>
+                    <span class="panel-badge" id="adminMsgCount">0 messages</span>
+                </div>
+            </div>
+            <div class="admin-feed-body" id="adminFeed">
+                <div class="empty-state" id="adminFeedEmpty">[ NO TRANSMISSIONS ]</div>
+            </div>
+        </div>
+
+        <!-- Admin Morse input -->
+        <div class="admin-input-box">
+            <div class="panel-header">
+                <span class="panel-label">⬡ TRANSMIT AS OVERLORD</span>
+                <span class="panel-badge" id="adminMorseLen">0 chars</span>
+            </div>
+            <div class="admin-input-body">
+                <div class="admin-directions">
+                    USE <span>[K]</span> dot &nbsp;·&nbsp;
+                    <span>[L]</span> dash &nbsp;·&nbsp;
+                    <span>[SPACE]</span> separate &nbsp;·&nbsp;
+                    <span>[ENTER]</span> send
+                </div>
+                <div class="admin-morse-display" id="adminMorseDisplay" tabindex="0">
+                    <span id="adminMorseText"></span>
+                    <span class="admin-morse-cursor"></span>
+                </div>
+                <div class="admin-actions">
+                    <span class="admin-hint" id="adminHint">Type with K and L...</span>
+                    <button class="btn-admin btn-admin-clear" id="adminClearBtn">⌫</button>
+                    <button class="btn-admin btn-admin-send" id="adminSendBtn">Send ▶</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Morse reference keypad -->
+    <div class="admin-keypad-panel">
+        <div class="panel-header">
+            <span class="panel-label">⬡ MORSE REFERENCE KEYPAD</span>
+            <span class="panel-badge" id="adminMatchCount">36 matches</span>
+        </div>
+        <div class="admin-keypad-body">
+            <div class="admin-keypad-grid" id="adminKeypadGrid"></div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Grafana Modal -->
+<div class="grafana-modal-overlay" id="grafanaModal" onclick="closeGrafanaModal()">
+    <div class="grafana-modal" onclick="event.stopPropagation()">
+        <div class="grafana-modal-header">
+            <span class="grafana-modal-title" id="grafanaModalTitle">⬡ PANEL</span>
+            <button class="grafana-modal-close" onclick="closeGrafanaModal()">✕ CLOSE</button>
+        </div>
+        <div class="grafana-modal-body" id="grafanaModalBody">
+            <div class="grafana-placeholder">
+                <span class="grafana-placeholder-icon">📊</span>
+                <span>[ GRAFANA PANEL ]</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer>
+    <span><span class="footer-dot"></span>OVERLORD COMMAND  //  ITEC 4810</span>
+    <span>ALL ACTIONS LOGGED</span>
+    <span>SECURE CHANNEL ACTIVE</span>
+</footer>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<script>
+    // ── Clock ──
+    function updateClock() {
+        document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // ── Toast ──
+    function showToast(msg, type = 'success') {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = `toast show ${type}`;
+        setTimeout(() => t.className = 'toast', 3000);
+    }
+
+    // ── Load stats ──
+    async function loadStats() {
+        try {
+            const res  = await fetch('/admin/stats', { credentials: 'same-origin' });
+            const data = await res.json();
+            document.getElementById('statPending').textContent  = data.pending;
+            document.getElementById('statApproved').textContent = data.approved;
+            document.getElementById('statRejected').textContent = data.rejected;
+            document.getElementById('statMessages').textContent = data.messages;
+        } catch (err) {
+            console.error('Stats error:', err);
+        }
+    }
+
+    // ── Load pending users ──
+    async function loadPending() {
+        try {
+            const res   = await fetch('/admin/pending', { credentials: 'same-origin' });
+            const users = await res.json();
+            const list  = document.getElementById('pendingList');
+            document.getElementById('pendingCount').textContent = users.length + ' operator' + (users.length !== 1 ? 's' : '');
+
+            if (users.length === 0) {
+                list.innerHTML = '<div class="empty-state">[ NO PENDING REQUESTS ]</div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            users.forEach(user => {
+                const card = document.createElement('div');
+                card.className = 'user-card';
+                card.id = `pending-${user._id}`;
+
+                const joined = user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown';
+
+                card.innerHTML = `
+                    <div class="user-info">
+                        <div class="user-name">${escapeHtml(user.username)}</div>
+                    </div>
+                    <span class="status-tag" style="color:var(--text-dim);border-color:var(--border-bright);background:transparent;">⏱ ${joined}</span>
+                    <div class="user-actions">
+                        <button class="btn-approve" onclick="approveUser('${user._id}', '${escapeHtml(user.username)}')">✔ APPROVE</button>
+                        <button class="btn-reject"  onclick="rejectUser('${user._id}', '${escapeHtml(user.username)}')">✘ REJECT</button>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        } catch (err) {
+            console.error('Pending load error:', err);
+        }
+    }
+
+    // ── Load approved users ──
+    async function loadApproved() {
+        try {
+            const res   = await fetch('/admin/approved', { credentials: 'same-origin' });
+            const users = await res.json();
+            const list  = document.getElementById('approvedList');
+
+            const onlineCount = users.filter(u => u.online).length;
+            document.getElementById('approvedCount').textContent =
+                users.length + ' operator' + (users.length !== 1 ? 's' : '') +
+                (onlineCount > 0 ? ' · ' + onlineCount + ' online' : '');
+
+            if (users.length === 0) {
+                list.innerHTML = '<div class="empty-state">[ NO OPERATORS ]</div>';
+                return;
+            }
+
+            // Store all users for filtering
+            list._allUsers = users;
+            renderApprovedCards(users);
+        } catch (err) {
+            console.error('Approved load error:', err);
+        }
+    }
+
+    function renderApprovedCards(users) {
+        const list = document.getElementById('approvedList');
+        list.innerHTML = '';
+        users.forEach(user => {
+            const card = document.createElement('div');
+            card.className = 'user-card';
+            card.dataset.username = user.username.toLowerCase();
+
+            const approvedDate = user.approved_at
+                ? new Date(user.approved_at).toLocaleDateString()
+                : '—';
+
+            card.innerHTML = `
+                <div class="user-info">
+                    <div class="user-name">${escapeHtml(user.username)}</div>
+                    <div class="user-meta">Approved: ${approvedDate}</div>
+                </div>
+                <span class="codename-badge">${escapeHtml(user.codename || '—')}</span>
+                <span class="status-tag ${user.online ? 'online' : 'offline'}">${user.online ? 'ACTIVE' : 'INACTIVE'}</span>
+                <div class="user-actions">
+                    ${user.online ? `<button class="btn-kick" onclick="kickUser('${user._id}', '${escapeHtml(user.username)}')">⚡ KICK</button>` : ''}
+                    <button class="btn-revoke" onclick="revokeUser('${user._id}', '${escapeHtml(user.username)}')">✘ REVOKE</button>
+                </div>
+            `;
+            list.appendChild(card);
+        });
+    }
+
+    // ── Filter operators by search ──
+    function filterOperators(query) {
+        const list = document.getElementById('approvedList');
+        const users = list._allUsers || [];
+        if (!query.trim()) {
+            renderApprovedCards(users);
+            return;
+        }
+        const filtered = users.filter(u =>
+            u.username.toLowerCase().includes(query.toLowerCase()) ||
+            (u.codename && u.codename.toLowerCase().includes(query.toLowerCase()))
+        );
+        renderApprovedCards(filtered);
+    }
+
+    // ── Approve user ──
+    async function approveUser(userId, username) {
+        try {
+            const res  = await fetch('/admin/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ user_id: userId })
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                showToast(`✔ ${username} approved → ${data.codename}`, 'success');
+                // Remove from pending list
+                const card = document.getElementById(`pending-${userId}`);
+                if (card) card.remove();
+                // Refresh all
+                loadPending();
+                loadApproved();
+                loadStats();
+            } else {
+                showToast(`✘ Error: ${data.error}`, 'error');
+            }
+        } catch (err) {
+            showToast('✘ Connection error.', 'error');
+        }
+    }
+
+    // ── Reject user ──
+    async function rejectUser(userId, username) {
+        try {
+            const res = await fetch('/admin/reject', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ user_id: userId })
+            });
+
+            if (res.ok) {
+                showToast(`✘ ${username} rejected.`, 'error');
+                loadPending();
+                loadStats();
+            }
+        } catch (err) {
+            showToast('✘ Connection error.', 'error');
+        }
+    }
+
+    // ── Logout ──
+    async function handleLogout() {
+        await fetch('/logout', { method: 'POST', credentials: 'same-origin' });
+        window.location.href = '/login';
+    }
+
+    function escapeHtml(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── Tab switching ──
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-nav-btn').forEach((btn, i) => {
+            btn.classList.toggle('active',
+                (i === 0 && tab === 'operators') || (i === 1 && tab === 'command'));
+        });
+        document.getElementById('tab-operators').classList.toggle('active', tab === 'operators');
+        document.getElementById('tab-command').classList.toggle('active', tab === 'command');
+    }
+
+    // ── Initial load ──
+    refreshAll();
+
+    // ── Socket.IO for real-time online/offline updates ──
+    const socket = io.connect('http://' + document.domain + ':' + location.port);
+
+    // When a user comes online or goes offline, refresh the operators list
+    socket.on('operator_status_change', function(data) {
+        // Refresh approved list to update online/offline badges
+        loadApproved();
+        loadStats();
+    });
+
+    // When a new user registers, refresh pending list
+    socket.on('new_pending_user', function(data) {
+        loadPending();
+        loadStats();
+        showToast('⬡ New operator request: ' + data.username, 'success');
+    });
+
+    function refreshAll() {
+        loadStats();
+        loadPending();
+        loadApproved();
+    }
+
+    // ── WELCOME SPLASH ──
+    function triggerAdminSplash() {
+        const bootLines = [
+            { text: 'COMMAND AUTHENTICATION: VERIFIED' },
+            { text: 'ADMIN PRIVILEGES: GRANTED' },
+            { text: 'OPERATOR DATABASE: ONLINE' },
+            { text: 'SECURE CHANNEL: ESTABLISHED' },
+            { text: 'LOADING COMMAND CENTER...' },
+        ];
+
+        const bootContainer = document.getElementById('splashBoot');
+        const codenameEl    = document.getElementById('splashCodename');
+        const welcomeEl     = document.getElementById('splashWelcome');
+        const barEl         = document.getElementById('splashBar');
+
+        bootLines.forEach((line, i) => {
+            const el = document.createElement('div');
+            el.className = 'splash-boot-line';
+            el.style.animationDelay = (i * 280) + 'ms';
+            el.innerHTML = line.text + ' ... <span class="splash-boot-ok">✔</span>';
+            bootContainer.appendChild(el);
+        });
+
+        const barDelay = bootLines.length * 280 + 200;
+
+        setTimeout(() => barEl.classList.add('expand'), barDelay);
+
+        // Slam in "WELCOME, OVERLORD" as one dramatic line
+        setTimeout(() => {
+            codenameEl.textContent = 'WELCOME, OVERLORD';
+            codenameEl.classList.add('slam');
+        }, barDelay + 600);
+
+        setTimeout(() => {
+            const splash = document.getElementById('splashScreen');
+            splash.classList.add('fade-out');
+            setTimeout(() => splash.remove(), 1000);
+        }, barDelay + 2800);
+    }
+
+    // ── Kick operator ──
+    async function kickUser(userId, username) {
+        try {
+            const res = await fetch('/admin/kick', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ user_id: userId })
+            });
+            if (res.ok) {
+                showToast(`⚡ ${username} has been kicked.`, 'error');
+                loadApproved();
+            }
+        } catch (err) {
+            showToast('✘ Connection error.', 'error');
+        }
+    }
+
+    // ── Revoke operator access ──
+    async function revokeUser(userId, username) {
+        try {
+            const res = await fetch('/admin/revoke', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ user_id: userId })
+            });
+            if (res.ok) {
+                showToast(`✘ ${username} access revoked.`, 'error');
+                loadApproved();
+                loadStats();
+            }
+        } catch (err) {
+            showToast('✘ Connection error.', 'error');
+        }
+    }
+
+    // ── Grafana modal ──
+    // Pass the panel's Grafana URL as src (empty string shows placeholder)
+    function openGrafanaModal(title, src) {
+        document.getElementById('grafanaModalTitle').textContent = '⬡ ' + title;
+        const body = document.getElementById('grafanaModalBody');
+        if (src) {
+            body.innerHTML = `<iframe src="${src}" allowfullscreen></iframe>`;
+        } else {
+            body.innerHTML = `
+                <div class="grafana-placeholder">
+                    <span class="grafana-placeholder-icon">📊</span>
+                    <span>[ ${title} ]</span>
+                    <span style="font-size:0.6rem;opacity:0.6;">No Grafana URL set yet</span>
+                </div>`;
+        }
+        document.getElementById('grafanaModal').classList.add('open');
+    }
+
+    function closeGrafanaModal() {
+        document.getElementById('grafanaModal').classList.remove('open');
+        document.getElementById('grafanaModalBody').innerHTML = '';
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeGrafanaModal();
+    });
+
+    // ── Auto-scroll toggle ──
+    let autoScroll = true;
+
+    function toggleAutoScroll() {
+        autoScroll = !autoScroll;
+        const btn = document.getElementById('autoScrollBtn');
+        btn.textContent = autoScroll ? '↓ AUTO' : '↓ OFF';
+        btn.classList.toggle('on', autoScroll);
+    }
+
+    // ── Clear admin feed ──
+    function clearAdminFeed() {
+        const feed = document.getElementById('adminFeed');
+        feed.innerHTML = '<div class="empty-state" id="adminFeedEmpty">[ NO TRANSMISSIONS ]</div>';
+        adminMsgCount = 0;
+        document.getElementById('adminMsgCount').textContent = '0 messages';
+    }
+
+    // ── Enhanced toast notifications ──
+    // Override socket events to show toasts
+    socket.on('new_pending_user', function(data) {
+        loadPending();
+        loadStats();
+        showToast(`⬡ New registration: ${data.username}`, 'success');
+    });
+
+    socket.on('operator_status_change', function(data) {
+        loadApproved();
+        loadStats();
+        if (data.online) {
+            showToast(`● ${data.username || 'Operator'} is now ONLINE`, 'success');
+        } else {
+            showToast(`○ ${data.username || 'Operator'} went OFFLINE`, 'error');
+        }
+    });
+
+    // Override appendAdminMsg to respect auto-scroll and show toast when on operators tab
+    const _origAppendAdminMsg = appendAdminMsg;
+
+    // Trigger splash on page load
+    triggerAdminSplash();
+
+    // ══════════════════════════════════════════
+    // ADMIN MESSAGING
+    // ══════════════════════════════════════════
+    const MORSE_DICT = {
+        'A':'.-','B':'-...','C':'-.-.','D':'-..','E':'.','F':'..-.','G':'--.','H':'....','I':'..','J':'.---',
+        'K':'-.-','L':'.-..','M':'--','N':'-.','O':'---','P':'.--.','Q':'--.-','R':'.-.','S':'...','T':'-',
+        'U':'..-','V':'...-','W':'.--','X':'-..-','Y':'-.--','Z':'--..',
+        '0':'-----','1':'.----','2':'..---','3':'...--','4':'....-','5':'.....','6':'-....','7':'--...','8':'---..',
+        '9':'----.'
+    };
+
+    let adminMorse = '';
+    let adminLetterSeq = '';
+    let adminMsgCount = 0;
+    let adminWarningTimer = null;
+
+    const adminDisplay   = document.getElementById('adminMorseDisplay');
+    const adminMorseText = document.getElementById('adminMorseText');
+    const adminHint      = document.getElementById('adminHint');
+
+    const ADMIN_ALLOWED = new Set(['k','l',' ','backspace','enter','control']);
+
+    adminDisplay.addEventListener('keydown', function(e) {
+        const key = e.key.toLowerCase();
+        if (key === 'control' || (e.ctrlKey && (key === 'c' || key === 'v'))) return;
+        if (!ADMIN_ALLOWED.has(key)) { e.preventDefault(); return; }
+        e.preventDefault();
+
+        if (key === 'k') {
+            adminMorse += '.'; adminLetterSeq += '.';
+        } else if (key === 'l') {
+            adminMorse += '-'; adminLetterSeq += '-';
+        } else if (key === ' ') {
+            if (adminMorse.length > 0 && adminMorse[adminMorse.length-1] !== ' ') {
+                adminMorse += ' '; adminLetterSeq = '';
+            }
+        } else if (key === 'backspace') {
+            if (adminMorse.length > 0) {
+                adminMorse = adminMorse.slice(0,-1);
+                const ls = adminMorse.lastIndexOf(' ');
+                adminLetterSeq = ls === -1 ? adminMorse : adminMorse.substring(ls+1);
+            }
+        } else if (key === 'enter') {
+            sendAdminMessage(); return;
+        }
+        updateAdminDisplay();
+        updateAdminKeypad(adminLetterSeq);
+    });
+
+    function updateAdminDisplay() {
+        adminMorseText.textContent = adminMorse;
+        const len = adminMorse.length;
+        document.getElementById('adminMorseLen').textContent = len + ' char' + (len !== 1 ? 's' : '');
+        adminHint.textContent = len > 0 ? 'Press Enter to send' : 'Type with K and L...';
+    }
+
+    async function sendAdminMessage() {
+        const msg = adminMorse.trim();
+        if (!msg) return;
+        socket.emit('/message', { morse: msg });
+        adminMorse = ''; adminLetterSeq = '';
+        updateAdminDisplay();
+        updateAdminKeypad('');
+    }
+
+    document.getElementById('adminSendBtn').addEventListener('click', sendAdminMessage);
+    document.getElementById('adminClearBtn').addEventListener('click', () => {
+        adminMorse = ''; adminLetterSeq = '';
+        updateAdminDisplay();
+        updateAdminKeypad('');
+        adminDisplay.focus();
+    });
+    document.querySelector('.admin-input-box').addEventListener('click', () => adminDisplay.focus());
+
+    // ── Listen for new messages and show in admin feed ──
+    socket.on('/new_message', function(msg) {
+        appendAdminMsg(msg);
+    });
+
+    function appendAdminMsg(msg) {
+        const empty = document.getElementById('adminFeedEmpty');
+        if (empty) empty.remove();
+
+        adminMsgCount++;
+        document.getElementById('adminMsgCount').textContent =
+            adminMsgCount + ' message' + (adminMsgCount !== 1 ? 's' : '');
+
+        const feed = document.getElementById('adminFeed');
+        const item = document.createElement('div');
+        item.className = 'admin-msg-item';
+
+        const codename = msg.codename || 'UNKNOWN';
+        const color    = msg.color || '#00ff41';
+        const timeStr  = msg.time ? new Date(msg.time).toLocaleTimeString() : new Date().toLocaleTimeString();
+
+        item.innerHTML = `
+            <span class="admin-msg-codename" style="color:${color}">${escapeHtml(codename)}</span>
+            <span style="color:var(--text-dim)">▸</span>
+            <span class="admin-msg-text">${escapeHtml(msg.message)}</span>
+            <span class="admin-msg-time">⏱ ${timeStr}</span>
+        `;
+        feed.appendChild(item);
+
+        // Only auto-scroll if enabled
+        if (autoScroll) feed.scrollTop = feed.scrollHeight;
+
+        // Show toast notification if admin is on operators tab (not watching the feed)
+        const onCommandTab = document.getElementById('tab-command').classList.contains('active');
+        if (!onCommandTab) {
+            showToast(`⬡ ${codename}: ${msg.message}`, 'success');
+        }
+    }
+
+    function escapeHtml(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // Load existing messages into admin feed on connect
+    socket.on('connect', async function() {
+        try {
+            const res = await fetch('/full_messages', { credentials: 'same-origin' });
+            const messages = await res.json();
+            messages.forEach(appendAdminMsg);
+        } catch(e) { console.error(e); }
+    });
+
+    // ── Admin keypad ──
+    function buildAdminKeypad() {
+        const grid = document.getElementById('adminKeypadGrid');
+        grid.innerHTML = '';
+        Object.entries(MORSE_DICT).forEach(([char, morse]) => {
+            const item = document.createElement('div');
+            item.className = 'admin-key-item';
+            item.dataset.morse = morse;
+            item.innerHTML = `<span class="admin-key-char">${char}</span><span class="admin-key-morse">${morse}</span>`;
+            grid.appendChild(item);
+        });
+    }
+
+    function updateAdminKeypad(seq) {
+        const items = document.querySelectorAll('.admin-key-item');
+        let count = 0;
+        items.forEach(item => {
+            const morse = item.dataset.morse;
+            if (seq === '') {
+                item.classList.remove('faded','active'); count++;
+            } else if (morse.startsWith(seq)) {
+                item.classList.remove('faded'); item.classList.add('active'); count++;
+            } else {
+                item.classList.add('faded'); item.classList.remove('active');
+            }
+        });
+        document.getElementById('adminMatchCount').textContent =
+            count + ' match' + (count !== 1 ? 'es' : '');
+    }
+
+    buildAdminKeypad();
+    updateAdminKeypad('');
+
+</script>
+
+</body>
+</html>

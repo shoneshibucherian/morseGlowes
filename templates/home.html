@@ -32,7 +32,7 @@
             --border-active: #00ff41;   /* Bright border for active/focused elements */
             --red: #ff3b3b;             /* Red for warnings and errors */
             --amber: #ffb700;           /* Amber/yellow for ESP32 messages */
-            --text-dim: #4a7a4a;        /* Muted green for less important text */
+            --text-dim: #3a6a3a;        /* Muted green for less important text */
         }
 
         /* ══════════════════════════════════════════
@@ -261,18 +261,44 @@
         /* Each individual message row in the feed */
         .message-item {
             display: flex;
-            align-items: flex-start;
-            gap: 12px;
+            align-items: baseline;
+            gap: 10px;
             padding: 8px 12px;
-            border-left: 3px solid var(--green-dim); /* Green left accent bar */
+            border-left: 3px solid var(--green-dim);
             background: rgba(0, 255, 65, 0.03);
             border-radius: 0 3px 3px 0;
-            animation: fadeIn 0.3s ease; /* Slides in from the left when added */
+            animation: fadeIn 0.3s ease;
+            flex-wrap: wrap;
         }
 
         /* ESP32 messages get an amber accent instead of green */
         .message-item.esp32 {
             border-left-color: var(--amber);
+        }
+
+        /* Codename shown to the left of the message in the user's color */
+        .message-codename {
+            font-size: 0.85rem;
+            font-weight: bold;
+            letter-spacing: 0.05em;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* Spacer between codename and message text */
+        .message-separator {
+            color: var(--text-dim);
+            flex-shrink: 0;
+        }
+
+        /* Timestamp and coordinates pushed to the right */
+        .message-right-meta {
+            margin-left: auto;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            display: flex;
+            gap: 10px;
+            flex-shrink: 0;
         }
 
         /* Slide-in animation for new messages */
@@ -704,9 +730,378 @@
             transform: scale(1.15);
         }
 
+        /* Theme swatches — wider rectangular tiles showing bg + accent */
+        .theme-swatches {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .theme-tile {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.15s ease;
+        }
+
+        .theme-tile:hover {
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .theme-tile.selected {
+            border-color: white;
+        }
+
+        .theme-preview {
+            width: 28px;
+            height: 18px;
+            border-radius: 2px;
+            flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .theme-name {
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+        }
+
+
+        /* ══════════════════════════════════════════
+           WELCOME SPLASH SCREEN
+           ══════════════════════════════════════════ */
+
+        .splash-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            z-index: 99000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            transition: opacity 0.8s ease;
+        }
+
+        .splash-screen.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .splash-inner {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            width: 600px;
+            max-width: 90vw;
+        }
+
+        /* Boot lines that type out one by one */
+        .splash-boot {
+            width: 100%;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            letter-spacing: 0.12em;
+            line-height: 2;
+            min-height: 120px;
+        }
+
+        .splash-boot-line {
+            opacity: 0;
+            animation: splashLineIn 0.1s forwards;
+            white-space: nowrap;
+        }
+
+        @keyframes splashLineIn {
+            to { opacity: 1; }
+        }
+
+        .splash-boot-ok   { color: var(--green); }
+        .splash-boot-warn { color: var(--amber); }
+
+        /* Divider bar */
+        .splash-bar {
+            width: 100%;
+            height: 1px;
+            background: var(--green);
+            transform: scaleX(0);
+            transform-origin: left;
+            box-shadow: 0 0 10px var(--green);
+        }
+
+        .splash-bar.expand {
+            animation: barExpand 0.5s ease forwards;
+        }
+
+        @keyframes barExpand {
+            to { transform: scaleX(1); }
+        }
+
+        /* Big codename slam */
+        .splash-codename {
+            font-family: 'Orbitron', monospace;
+            font-size: 3.2rem;
+            font-weight: 900;
+            color: var(--green);
+            letter-spacing: 0.25em;
+            text-align: center;
+            text-shadow: 0 0 30px var(--green),
+                         0 0 60px rgba(0,255,65,0.4),
+                         0 0 100px rgba(0,255,65,0.2);
+            opacity: 0;
+            transform: scale(1.3);
+            transition: none;
+        }
+
+        .splash-codename.slam {
+            animation: codenameSlam 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        @keyframes codenameSlam {
+            0%   { opacity: 0; transform: scale(1.4); letter-spacing: 0.6em; }
+            60%  { opacity: 1; transform: scale(0.97); letter-spacing: 0.2em; }
+            100% { opacity: 1; transform: scale(1); letter-spacing: 0.25em; }
+        }
+
+        /* Welcome line below codename */
+        .splash-welcome {
+            font-size: 0.88rem;
+            color: var(--green-dim);
+            letter-spacing: 0.4em;
+            text-transform: uppercase;
+            opacity: 0;
+            text-align: center;
+        }
+
+        .splash-welcome.fade-in {
+            animation: splashWelcomeIn 0.6s ease forwards;
+        }
+
+        @keyframes splashWelcomeIn {
+            0%   { opacity: 0; letter-spacing: 0.8em; }
+            100% { opacity: 1; letter-spacing: 0.4em; }
+        }
+
+        /* Scanlines on top of splash */
+        .splash-screen::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg, transparent, transparent 2px,
+                rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px
+            );
+            pointer-events: none;
+        }
+
+
+        /* ══════════════════════════════════════════
+           MOBILE RESPONSIVE STYLES
+           Applied when screen width is 768px or less.
+           Handles layout, font sizes, and panel heights
+           for phones and small tablets.
+           ══════════════════════════════════════════ */
+
+        /* Mobile dot/dash input buttons — hidden on desktop */
+        .mobile-input-btns {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+
+            /* Shrink header */
+            header {
+                padding: 10px 12px;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+
+            .header-title h1 {
+                font-size: 1.1rem;
+            }
+
+            .header-subtitle {
+                font-size: 0.65rem;
+            }
+
+            .header-status {
+                font-size: 0.72rem;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+
+            /* Stack panels vertically with smaller heights */
+            main {
+                padding: 8px;
+                gap: 8px;
+            }
+
+            .messages-panel {
+                height: 220px;
+            }
+
+            .messages-panel .panel-body {
+                height: calc(220px - 41px);
+            }
+
+            .input-panel {
+                height: auto;
+                min-height: 200px;
+            }
+
+            .input-panel .panel-body {
+                height: auto;
+                padding: 10px;
+            }
+
+            .keypad-panel {
+                height: 200px;
+            }
+
+            .keypad-panel .panel-body {
+                height: calc(200px - 41px);
+            }
+
+            /* Smaller keypad tiles on mobile */
+            .keypad-grid {
+                grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+                gap: 4px;
+            }
+
+            .key-item {
+                padding: 6px 2px;
+            }
+
+            .key-char {
+                font-size: 0.9rem;
+            }
+
+            .key-morse {
+                font-size: 0.62rem;
+            }
+
+            /* Smaller message text */
+            .message-text {
+                font-size: 0.92rem;
+            }
+
+            .message-codename {
+                font-size: 0.78rem;
+            }
+
+            .message-right-meta {
+                font-size: 0.68rem;
+                gap: 6px;
+            }
+
+            /* Hide desktop keyboard instructions on mobile */
+            .input-directions {
+                display: none;
+            }
+
+            /* Show mobile dot/dash buttons */
+            .mobile-input-btns {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: 1fr 1fr;
+                gap: 8px;
+                margin-bottom: 8px;
+            }
+
+            .mobile-btn {
+                font-family: 'Share Tech Mono', monospace;
+                font-size: 1.1rem;
+                font-weight: bold;
+                padding: 14px 8px;
+                border-radius: 4px;
+                cursor: pointer;
+                border: 1px solid var(--green-dim);
+                background: rgba(0,255,65,0.06);
+                color: var(--green);
+                transition: all 0.15s ease;
+                letter-spacing: 0.1em;
+                text-align: center;
+                -webkit-tap-highlight-color: transparent;
+                user-select: none;
+            }
+
+            .mobile-btn:active {
+                background: rgba(0,255,65,0.18);
+                transform: scale(0.96);
+            }
+
+            .mobile-btn.dot { grid-column: 1; }
+            .mobile-btn.dash { grid-column: 2; }
+            .mobile-btn.space-btn {
+                grid-column: 1 / 3;
+                font-size: 0.82rem;
+                padding: 10px;
+            }
+
+            /* Morse display smaller on mobile */
+            .morse-display {
+                font-size: 1.1rem;
+                min-height: 40px;
+                padding: 8px 10px;
+            }
+
+            /* Buttons row */
+            .input-actions {
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+
+            .btn {
+                font-size: 0.78rem;
+                padding: 7px 14px;
+            }
+
+            /* Profile icon smaller */
+            .profile-icon {
+                width: 30px;
+                height: 30px;
+                font-size: 0.65rem;
+            }
+
+            /* Profile menu — wider on mobile */
+            .profile-menu {
+                width: 180px;
+                right: 0;
+            }
+        }
+
+        /* Extra small phones */
+        @media (max-width: 400px) {
+            .header-title h1 {
+                font-size: 0.95rem;
+            }
+
+            .keypad-grid {
+                grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+            }
+        }
+
     </style>
 </head>
 <body>
+
+<!-- ══════════════════════════════════════════
+     WELCOME SPLASH SCREEN
+     Full-screen takeover on login. Fades out
+     after the boot sequence completes.
+     ══════════════════════════════════════════ -->
+<div class="splash-screen" id="splashScreen">
+    <div class="splash-inner">
+        <div class="splash-boot" id="splashBoot"></div>
+        <div class="splash-bar" id="splashBar"></div>
+        <div class="splash-codename" id="splashCodename"></div>
+        <div class="splash-welcome" id="splashWelcome"></div>
+    </div>
+</div>
 
 <!-- ══════════════════════════════════════════
      HEADER
@@ -736,7 +1131,10 @@
                     <span id="profileMenuName">Loading...</span>
                 </div>
                 <div class="profile-menu-item" onclick="toggleColorPicker()">
-                    ◈ Pick Color
+                    ◈ Name Color
+                </div>
+                <div class="profile-menu-item" onclick="toggleThemePicker()">
+                    ◈ Theme
                 </div>
                 <!-- Inline color picker (hidden by default) -->
                 <div class="profile-color-picker" id="profileColorPicker">
@@ -746,6 +1144,11 @@
                         <input type="color" id="profileCustomColor" style="width:32px;height:24px;border:1px solid var(--border);background:var(--bg);cursor:pointer;border-radius:3px;">
                         <button onclick="applyCustomColor()" style="font-family:'Share Tech Mono',monospace;font-size:0.68rem;padding:4px 10px;background:rgba(0,255,65,0.06);border:1px solid var(--green-dim);color:var(--green);cursor:pointer;border-radius:3px;">Apply</button>
                     </div>
+                </div>
+                <!-- Combined theme picker -->
+                <div class="profile-color-picker" id="profileThemePicker">
+                    <div style="font-size:0.65rem;color:var(--text-dim);margin-bottom:8px;letter-spacing:0.1em;">SELECT THEME</div>
+                    <div class="theme-swatches" id="themeSwatches"></div>
                 </div>
                 <div class="profile-menu-item profile-menu-logout" onclick="handleLogout()">
                     ⏻ Logout
@@ -791,7 +1194,7 @@
             <span class="panel-badge" id="morseLength">0 chars</span>
         </div>
         <div class="panel-body">
-            <!-- Instructions for the user -->
+            <!-- Instructions for the user (hidden on mobile) -->
             <div class="input-directions">
                 USE <span>[K]</span> for dot &nbsp;·&nbsp;
                 <span>[L]</span> for dash &nbsp;·&nbsp;
@@ -799,20 +1202,34 @@
                 <span>[BACKSPACE]</span> to delete &nbsp;·&nbsp;
                 <span>[ENTER]</span> to send
             </div>
+
+            <!-- Mobile dot/dash buttons (hidden on desktop, shown on mobile) -->
+            <div class="mobile-input-btns" id="mobileInputBtns">
+                <button class="mobile-btn dot" id="mobileDotBtn" ontouchstart="mobileDot()">
+                    · DOT (K)
+                </button>
+                <button class="mobile-btn dash" id="mobileDashBtn" ontouchstart="mobileDash()">
+                    — DASH (L)
+                </button>
+                <button class="mobile-btn space-btn" id="mobileSpaceBtn" ontouchstart="mobileSpace()">
+                    [ SPACE — SEPARATE LETTERS ]
+                </button>
+            </div>
             <!-- Warning shown when an invalid key is pressed — hidden by default -->
             <div class="input-warning" id="inputWarning">
                 ⚠ INVALID KEY — Use only K, L, Space, Backspace, or Enter
             </div>
             <div class="morse-input-area">
                 <!-- The Morse code display area. tabindex="0" makes it focusable so it can receive keyboard events -->
-                <div class="morse-display" id="morseDisplay" tabindex="0">
+                <!-- readonly prevents mobile keyboard from popping up -->
+                <div class="morse-display" id="morseDisplay" tabindex="0" inputmode="none">
                     <span id="morseText"></span>
                     <span class="morse-cursor"></span> <!-- Blinking cursor -->
                 </div>
                 <div class="input-actions">
                     <!-- Hint text that changes between "Start typing..." and "Press Enter to send" -->
                     <span class="morse-length" id="morseHint">Start typing with K and L keys...</span>
-                    <button class="btn btn-clear" id="clearBtn">Clear</button>
+                    <button class="btn btn-clear" id="clearBtn">⌫</button>
                     <button class="btn btn-send" id="sendBtn">Send ▶</button>
                 </div>
             </div>
@@ -877,6 +1294,26 @@
     const connectionLabel = document.getElementById('connectionLabel');
 
     // When the Socket.IO connection is established:
+    // ── Kicked / Revoked by admin ──
+    socket.on('kicked', function(data) {
+        document.body.innerHTML = `
+            <div style="position:fixed;inset:0;background:#060a06;display:flex;
+                align-items:center;justify-content:center;flex-direction:column;
+                gap:20px;font-family:'Share Tech Mono',monospace;color:#ff3b3b;
+                text-align:center;padding:20px;">
+                <div style="font-family:'Orbitron',monospace;font-size:1.8rem;
+                    font-weight:900;text-shadow:0 0 20px rgba(255,59,59,0.8);">
+                    ⚠ ACCESS TERMINATED
+                </div>
+                <div style="font-size:0.9rem;color:#aa4444;letter-spacing:0.1em;">
+                    ${data.message || 'You have been disconnected by OVERLORD.'}
+                </div>
+                <div style="font-size:0.75rem;color:#7a2a2a;">Redirecting to login...</div>
+            </div>
+        `;
+        setTimeout(() => window.location.href = '/login', 2500);
+    });
+
     socket.on('connect', function () {
         // Update the header dot and label to show "Connected"
         connectionDot.classList.add('connected');
@@ -947,33 +1384,34 @@
         item.className = 'message-item' + (isESP32 ? ' esp32' : '');
         item.dataset.userId = msg.rescuer; // Store user ID for color updates
 
-        // Colored dot representing the sender (color assigned by Flask based on user ID)
-        const dot = document.createElement('div');
-        dot.className = 'message-color-tag';
-        dot.style.backgroundColor = msg.color || (isESP32 ? '#ffb700' : '#00ff41');
+        // Codename shown in the user's color to the left of the message
+        const codename = msg.codename || (isESP32 ? 'ESP32 GLOVE' : 'UNKNOWN');
+        const msgColor = msg.color || (isESP32 ? '#ffb700' : '#39ff6e');
 
-        const content = document.createElement('div');
-        content.className = 'message-content';
+        const codenameEl = document.createElement('span');
+        codenameEl.className = 'message-codename';
+        codenameEl.style.color = msgColor;
+        codenameEl.textContent = codename;
 
-        // Format the timestamp — use the stored time or fall back to now
+        const separatorEl = document.createElement('span');
+        separatorEl.className = 'message-separator';
+        separatorEl.textContent = '▸';
+
+        const msgEl = document.createElement('span');
+        msgEl.className = 'message-text';
+        msgEl.textContent = msg.message;
+
+        // Timestamp and coordinates pushed to the right
         const timeStr = msg.time ? new Date(msg.time).toLocaleTimeString() : new Date().toLocaleTimeString();
+        const metaEl  = document.createElement('span');
+        metaEl.className = 'message-right-meta';
+        metaEl.innerHTML = '<span>⏱ ' + timeStr + '</span>' +
+            (msg.latitude ? '<span>📍 ' + parseFloat(msg.latitude).toFixed(4) + ', ' + parseFloat(msg.longitude).toFixed(4) + '</span>' : '');
 
-        // Show "ESP32 Glove" or a shortened version of the user's UUID
-        // Show username if available, otherwise fall back to shortened UUID
-        const sender = isESP32 ? 'ESP32 Glove' : (msg.username || ('User ' + (msg.rescuer ? msg.rescuer.substring(0, 8) : '')));
-
-        // Build the message HTML — show coordinates only if location was captured
-        content.innerHTML = `
-            <div class="message-text">${escapeHtml(msg.message)}</div>
-            <div class="message-meta">
-                <span>⏱ ${timeStr}</span>
-                <span>▸ ${sender}</span>
-                ${msg.latitude ? `<span>📍 ${parseFloat(msg.latitude).toFixed(4)}, ${parseFloat(msg.longitude).toFixed(4)}</span>` : ''}
-            </div>
-        `;
-
-        item.appendChild(dot);
-        item.appendChild(content);
+        item.appendChild(codenameEl);
+        item.appendChild(separatorEl);
+        item.appendChild(msgEl);
+        item.appendChild(metaEl);
         list.appendChild(item);
 
         // Auto-scroll to the bottom so the newest message is always visible
@@ -1239,7 +1677,10 @@
     });
 
     // Auto-focus the Morse input when the page finishes loading
-    window.addEventListener('load', () => morseDisplay.focus());
+    // Only auto-focus on desktop — on mobile it would pop up the keyboard
+    window.addEventListener('load', () => {
+        if (!isMobile()) morseDisplay.focus();
+    });
 
     // ══════════════════════════════════════════
     // USER SESSION — PROFILE ICON
@@ -1264,18 +1705,36 @@
             const user = await res.json();
             currentUser = user;
 
-            // Set profile icon color and initials
+            // Set profile icon color and initials from CODENAME
             const icon = document.getElementById('profileIcon');
             icon.style.background = user.color;
-            // Use initials from username (up to 2 chars)
-            const initials = user.username.substring(0, 2).toUpperCase();
+            // Use initials from CODENAME not username (OPSEC)
+            const codename = user.codename || user.username;
+            const parts    = codename.trim().split(' ');
+            const initials = parts.length >= 2
+                ? (parts[0][0] + parts[1][0]).toUpperCase()
+                : codename.substring(0, 2).toUpperCase();
             document.getElementById('profileInitials').textContent = initials;
 
             // Set dropdown header name
-            document.getElementById('profileMenuName').textContent = user.username;
+            document.getElementById('profileMenuName').textContent = user.codename || user.username;
 
             // Build color swatches in dropdown
             buildProfileSwatches(user.color);
+
+            // Apply saved theme if any
+            const savedTheme = user.theme_name
+                ? THEMES.find(t => t.name === user.theme_name)
+                : null;
+            if (savedTheme) {
+                applyTheme(savedTheme);
+                activeTheme = savedTheme.name;
+            }
+            // Build theme swatches with saved selection highlighted
+            buildThemeSwatches(user.theme_name || 'PHOSPHOR');
+
+            // Trigger welcome splash with the user's codename
+            triggerWelcomeSplash(user.codename || user.username);
 
             // Now that user is loaded, request location
             requestLocation();
@@ -1286,16 +1745,22 @@
     }
 
     function buildProfileSwatches(currentColor) {
+        // Build profile color swatches
         const container = document.getElementById('profileSwatches');
+        if (!container) return;
         container.innerHTML = '';
         PROFILE_COLORS.forEach(color => {
             const s = document.createElement('div');
-            s.className = 'profile-swatch' + (color === currentColor ? ' selected' : '');
+            s.className = 'profile-swatch';
             s.style.background = color;
-            s.onclick = () => applyColor(color, s);
+            s.onclick = () => {
+                container.querySelectorAll('.profile-swatch').forEach(x => x.classList.remove('selected'));
+                s.classList.add('selected');
+                document.getElementById('profileCustomColor').value = color;
+                applyColor(color, null);
+            };
             container.appendChild(s);
         });
-        // Set custom color input to current color
         document.getElementById('profileCustomColor').value = currentColor;
     }
 
@@ -1352,12 +1817,12 @@
                 document.getElementById('profileIcon').style.background = color;
                 if (currentUser) currentUser.color = color;
 
-                // Update all messages in the feed that belong to this user
+                // Update the colored codename text in all messages by this user
                 if (currentUser) {
                     document.querySelectorAll('.message-item').forEach(item => {
-                        const dot = item.querySelector('.message-color-tag');
-                        if (dot && item.dataset.userId === currentUser.user_id) {
-                            dot.style.backgroundColor = color;
+                        if (item.dataset.userId === currentUser.user_id) {
+                            const codenameEl = item.querySelector('.message-codename');
+                            if (codenameEl) codenameEl.style.color = color;
                         }
                     });
                 }
@@ -1366,6 +1831,88 @@
         } catch (err) {
             console.error('Failed to update color:', err);
         }
+    }
+
+    // ── PRESET THEMES ──
+    // Each theme has a name, dark background color, and accent color
+    const THEMES = [
+        { name: 'DEFAULT',   bg: '#060a06', accent: '#00ff41', label: 'Default' },
+        { name: 'AMBER',     bg: '#080600', accent: '#ffb700', label: 'Amber'   },
+        { name: 'COBALT',    bg: '#020610', accent: '#4fc3f7', label: 'Blue'    },
+        { name: 'CRIMSON',   bg: '#080202', accent: '#ff5555', label: 'Red'     },
+        { name: 'VIOLET',    bg: '#060208', accent: '#bf7fff', label: 'Purple'  },
+    ];
+
+    let activeTheme = 'PHOSPHOR';
+
+    function toggleThemePicker() {
+        document.getElementById('profileThemePicker').classList.toggle('open');
+        document.getElementById('profileColorPicker').classList.remove('open');
+    }
+
+    // Build the theme tiles in the dropdown
+    function buildThemeSwatches(savedThemeName) {
+        const container = document.getElementById('themeSwatches');
+        if (!container) return;
+        container.innerHTML = '';
+        THEMES.forEach(theme => {
+            const tile = document.createElement('div');
+            tile.className = 'theme-tile' + (theme.name === (savedThemeName || 'PHOSPHOR') ? ' selected' : '');
+            tile.style.background = theme.bg;
+
+            const preview = document.createElement('div');
+            preview.className = 'theme-preview';
+            preview.style.background = theme.accent;
+
+            const label = document.createElement('span');
+            label.className = 'theme-name';
+            label.style.color = theme.accent;
+            label.textContent = theme.label;
+
+            tile.appendChild(preview);
+            tile.appendChild(label);
+            tile.onclick = () => selectTheme(theme, tile);
+            container.appendChild(tile);
+        });
+    }
+
+    async function selectTheme(theme, tileEl) {
+        // Update selected tile visually
+        document.querySelectorAll('.theme-tile').forEach(t => t.classList.remove('selected'));
+        tileEl.classList.add('selected');
+        activeTheme = theme.name;
+
+        // Apply to page
+        applyTheme(theme);
+
+        // Save to MongoDB
+        await fetch('/update_layout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ layout_color: theme.accent, bg_color: theme.bg, theme_name: theme.name })
+        });
+    }
+
+    function applyTheme(theme) {
+        const root = document.documentElement;
+        root.style.setProperty('--bg', theme.bg);
+        root.style.setProperty('--bg-panel', adjustColor(theme.bg, 6));
+        root.style.setProperty('--bg-panel2', adjustColor(theme.bg, 10));
+        root.style.setProperty('--green', theme.accent);
+        root.style.setProperty('--green-dim', adjustColor(theme.accent, -30));
+        root.style.setProperty('--text-dim', adjustColor(theme.accent, -80));
+        root.style.setProperty('--border', adjustColor(theme.bg, 20));
+        root.style.setProperty('--border-active', theme.accent);
+    }
+
+    // Helper: slightly adjusts a hex color brightness
+    function adjustColor(hex, amount) {
+        const num = parseInt(hex.replace('#',''), 16);
+        const r = Math.max(0, Math.min(255, (num >> 16) + amount));
+        const g = Math.max(0, Math.min(255, ((num >> 8) & 0xff) + amount));
+        const b = Math.max(0, Math.min(255, (num & 0xff) + amount));
+        return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
     }
 
     // ── Logout ──
@@ -1379,6 +1926,112 @@
             console.error('Logout error:', err);
         }
         window.location.href = '/login';
+    }
+
+    // ══════════════════════════════════════════
+    // MOBILE DETECTION
+    // Detects if the user is on a mobile device
+    // using screen width and user agent.
+    // ══════════════════════════════════════════
+    function isMobile() {
+        return window.innerWidth <= 768 ||
+               /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+    }
+
+    // ── Mobile dot input ──
+    function mobileDot() {
+        morseMessage += '.';
+        currentLetterSeq += '.';
+        updateMorseDisplay();
+        updateKeypad(currentLetterSeq);
+    }
+
+    // ── Mobile dash input ──
+    function mobileDash() {
+        morseMessage += '-';
+        currentLetterSeq += '-';
+        updateMorseDisplay();
+        updateKeypad(currentLetterSeq);
+    }
+
+    // ── Mobile space input ──
+    function mobileSpace() {
+        if (morseMessage.length > 0 && morseMessage[morseMessage.length - 1] !== ' ') {
+            morseMessage += ' ';
+            currentLetterSeq = '';
+            updateMorseDisplay();
+            updateKeypad(currentLetterSeq);
+        }
+    }
+
+    // ── Mobile backspace ──
+    // Wire the existing clear btn to also work as backspace on mobile
+    // by adding a long-press for clear and tap for backspace
+    document.getElementById('clearBtn').addEventListener('click', function() {
+        if (isMobile() && morseMessage.length > 0) {
+            // On mobile, single tap = delete last character
+            morseMessage = morseMessage.slice(0, -1);
+            const lastSpace = morseMessage.lastIndexOf(' ');
+            currentLetterSeq = lastSpace === -1 ? morseMessage : morseMessage.substring(lastSpace + 1);
+            updateMorseDisplay();
+            updateKeypad(currentLetterSeq);
+            morseDisplay.focus();
+        } else {
+            // On desktop, clear everything
+            morseMessage = '';
+            currentLetterSeq = '';
+            updateMorseDisplay();
+            updateKeypad('');
+            morseDisplay.focus();
+        }
+    });
+
+    // ══════════════════════════════════════════
+    // WELCOME SPLASH SEQUENCE
+    // Called after user info is loaded so we
+    // have the codename ready to display.
+    // ══════════════════════════════════════════
+    function triggerWelcomeSplash(codename) {
+        const bootLines = [
+            { text: 'IDENTITY VERIFIED', suffix: '<span class="splash-boot-ok">✔</span>' },
+            { text: 'CLEARANCE LEVEL: CONFIRMED', suffix: '<span class="splash-boot-ok">✔</span>' },
+            { text: 'ENCRYPTION MODULES: ACTIVE', suffix: '<span class="splash-boot-ok">✔</span>' },
+            { text: 'SECURE CHANNEL: ESTABLISHED', suffix: '<span class="splash-boot-ok">✔</span>' },
+            { text: 'LOADING OPERATOR PROFILE...', suffix: '<span class="splash-boot-ok">✔</span>' },
+        ];
+
+        const bootContainer = document.getElementById('splashBoot');
+        const codenameEl    = document.getElementById('splashCodename');
+        const welcomeEl     = document.getElementById('splashWelcome');
+        const barEl         = document.getElementById('splashBar');
+
+        // Type out boot lines one by one — slower interval
+        bootLines.forEach((line, i) => {
+            const el = document.createElement('div');
+            el.className = 'splash-boot-line';
+            el.style.animationDelay = (i * 280) + 'ms';
+            el.innerHTML = line.text + ' ... ' + line.suffix;
+            bootContainer.appendChild(el);
+        });
+
+        // After boot lines, expand bar
+        const barDelay = bootLines.length * 280 + 200;
+        setTimeout(() => {
+            barEl.classList.add('expand');
+        }, barDelay);
+
+        // Slam in "WELCOME, [CODENAME]" as one dramatic line
+        setTimeout(() => {
+            codenameEl.textContent = 'WELCOME, ' + codename;
+            codenameEl.classList.add('slam');
+        }, barDelay + 600);
+
+        // Fade out the whole splash
+        setTimeout(() => {
+            const splash = document.getElementById('splashScreen');
+            splash.classList.add('fade-out');
+            setTimeout(() => splash.remove(), 1000);
+        }, barDelay + 2800);
     }
 
     // Load user info when the page loads
