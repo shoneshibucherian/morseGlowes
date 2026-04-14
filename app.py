@@ -1,3 +1,5 @@
+from gevent import monkey
+monkey.patch_all()
 from flask import Flask, render_template, request, jsonify, make_response, session, redirect, url_for
 from flask_socketio import SocketIO, emit
 from translator import encrypt, decrypt
@@ -6,6 +8,8 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 import uuid
 import hashlib
+
+
 
 uri = "mongodb://admin:password@localhost:27017/"
 
@@ -16,6 +20,26 @@ app = Flask(__name__)
 app.secret_key = "morse_app_secret_key_itec4810"
 
 socketio = SocketIO(app, cors_allowed_origins="*")
+# Set engineio_logger=True to see the low-level heartbeat and connection attempts
+# socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=True, engineio_logger=True)
+# socketio = SocketIO(app, 
+#                     cors_allowed_origins="*", 
+#                     async_mode='gevent', 
+#                     logger=True, 
+#                     engineio_logger=True,
+#                     always_connect=True)
+
+
+# socketio = SocketIO(app, 
+#                     cors_allowed_origins="*", 
+#                     async_mode='gevent',
+#                     ping_timeout=120,    # Give it 2 minutes
+#                     ping_interval=25,
+#                     logger=True, 
+#                     engineio_logger=True,
+#                     always_connect=True)
+# socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
 
 # ── MongoDB connection ──
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -240,6 +264,20 @@ def full_messages():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# @socketio.on('lora_data')
+# def handle_lora_data(data):
+#     print("Received from ESP32:", data)
+
+@socketio.on('lora_data')
+def handle_lora_data(data):
+    print("SUCCESS! Received from Heltec:", data)
+    # If you want to broadcast this to the web dashboard:
+    emit('/new_message', {
+        'username': 'Heltec LoRa',
+        'message': data.get('message', 'No message'),
+        'time': str(datetime.datetime.now()),
+        'color': '#00ff41'
+    }, broadcast=True)
 
 @app.route('/connect')
 @login_required
