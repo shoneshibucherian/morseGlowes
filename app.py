@@ -7,6 +7,8 @@ import datetime
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 import uuid
+import time
+import gpsmod
 import hashlib
 import random
 
@@ -531,6 +533,125 @@ def handle_esp32_message(data):
     print(f"Stored: {message}")
 
 
+
+# --- Battery Simulation Config ---
+bat1_MAX_VOLTAGE = 4.0
+bat1_FULL_VOLTAGE = 3.7
+bat1_MIN_VOLTAGE = 3.1
+
+bat1_DISCHARGE_RATE = 0.00005  # volts per second (tweak this)
+
+
+bat2_MAX_VOLTAGE = 4.0
+bat2_FULL_VOLTAGE = 3.7
+bat2_MIN_VOLTAGE = 3.1
+
+bat2_DISCHARGE_RATE = 0.0005  
+
+# --- Internal State ---
+battery1 = {
+    "voltage": bat1_FULL_VOLTAGE,
+    "last_update": time.time(),
+    "DISCHARGE_RATE": bat1_DISCHARGE_RATE,
+    "MIN_VOLTAGE": bat1_MIN_VOLTAGE,
+    "FULL_VOLTAGE": bat1_FULL_VOLTAGE
+}
+
+battery2 = {
+    "voltage": bat2_FULL_VOLTAGE,
+    "last_update": time.time(),
+    "DISCHARGE_RATE": bat2_DISCHARGE_RATE,
+    "MIN_VOLTAGE": bat2_MIN_VOLTAGE,
+    "FULL_VOLTAGE": bat2_FULL_VOLTAGE
+}
+
+def update_battery(battery):
+    now = time.time()
+    elapsed = now - battery["last_update"]
+
+    # Simulate discharge
+    drop = elapsed * battery["DISCHARGE_RATE"]
+    battery["voltage"] = max(battery["MIN_VOLTAGE"], battery["voltage"] - drop)
+    
+    battery["last_update"] = now
+
+
+def voltage_to_percentage(battery, voltage):
+    if voltage >= battery["FULL_VOLTAGE"]:
+        return 100
+    if voltage <= battery["MIN_VOLTAGE"]:
+        return 0
+
+    # Linear interpolation between 3.7V (100%) and 3.1V (0%)
+    percent = ((voltage - battery["MIN_VOLTAGE"]) / (battery["FULL_VOLTAGE"] - battery["MIN_VOLTAGE"])) * 100
+    return round(percent, 2)
+
+
+
+@app.route('/battery1', methods=['GET'])
+def get_battery1():
+    update_battery(battery1)
+
+    voltage = battery1["voltage"]
+    percentage = voltage_to_percentage(battery1,voltage)
+
+    return jsonify({
+        "voltage": round(voltage, 3),
+        "percentage": percentage
+    })
+
+
+
+#provide list of node and edges
+@app.route('/graph', methods=['GET'])
+def get_graph():
+    edge=request.args.get('edge')
+    # formate of node data 
+    #     nodes=[
+#             { "id": "node0", "title": "Washington, D.C.", "color": "blue" },
+#             { "id": "node1", "title": "San Juan, Puerto Rico", "color": "blue" },
+#             { "id": "node2", "title": "Miami, FL", "color": "blue" },
+#             { "id": "node3", "title": "Boca Raton, FL", "color": "blue" },]
+    nodes=[{"id":"Grafana", "title":"Grafana", "color":"green"}
+           ,{"id":"MongoDB", "title":"MongoDB", "color":"green"}
+           ,{"id":"MorseApp", "title":"MorseApp", "color":"green"}]
+    #formate of edge data
+    #             { "id": "e8", "source": "node3", "target": "node13", "mainStat": 2 },
+#             { "id": "e9", "source": "node2", "target": "node3", "mainStat": 3 },
+#             { "id": "e10", "source": "node2", "target": "node12", "mainStat": 2 }]
+    edges=[{ "id": "e1", "source": "Grafana", "target": "MorseApp" },
+           { "id": "e2", "source": "MongoDB", "target": "MorseApp" },]
+    users = list(users_col.find()) 
+    for user in users:
+            if user["username"]=="admin":
+                node_row={"id": user['username'], "title": user['username'], "color": "green"}
+            elif user['online']==True:
+                node_row={"id": user['username'], "title": user['username'], "color": "green"}
+            else:
+                node_row={"id": user['username'], "title": user['username'], "color": "red"}
+            nodes.append(node_row)
+    
+    if int(edge)==1:     
+        for user in users:
+            row={"id": f"e_{user['username']}", "source": "MorseApp", "target": user['username']}
+            edges.append(row)
+        return jsonify(edges)
+    else:
+        return jsonify(nodes)
+
+
+@app.route('/battery2', methods=['GET'])
+def get_battery2():
+    update_battery(battery2)
+
+    voltage = battery2["voltage"]
+    percentage = voltage_to_percentage(battery2, voltage)
+
+    return jsonify({
+        "voltage": round(voltage, 3),
+        "percentage": percentage
+    })
+
 @socketio.on('/message')
 def handle_message(data):
     if isinstance(data, dict):
@@ -573,6 +694,42 @@ def handle_message(data):
     }, broadcast=True)
 
     print(f"Received: {morse} | Translated: {message} | Codename: {codename}")
+
+
+#reads the collections namesd users and sents the data in the following format 
+
+
+# "target","geojson","aggrType","srcPath","stat1"
+# TTK,"{""coordinates"":[-84.00518567235461,33.980605849171305],""type"":""Point""}",node,,1
+# U29,"{""coordinates"":[-84.00518567235461,33.980605849171305],""type"":""Point""}",node,U24,1
+# U21,"{""coordinates"":[-84.00518567235461,33.980605849171305],""type"":""Point""}",node,U22,1
+@app.route('/get_users', methods=['GET'])
+def handle_get_users():
+    #read all rows in the users collection and send them to the client
+    users = list(users_col.find())
+    
+
+    lat, lon = 33.980605849171305, -84.00518567235461
+
+    data=[]
+    for user in users:
+        user['_id'] = str(user['_id'])
+        user.pop('pin_hash', None) 
+        sim = gpsmod.GPSSimulator()
+        noisy_lat, noisy_lon = sim.add_noise(lat, lon)
+        
+         # Remove sensitive info
+        data.append({
+            "target": user['username'],
+            "geojson": {
+                "type": "Point",
+                "coordinates": [noisy_lon, noisy_lat]  # Placeholder coordinates
+            },
+            "aggrType": "node",
+            "srcPath": "",
+            "stat1": 1
+        })
+    return jsonify(data), 200
 
 
 if __name__ == '__main__':
