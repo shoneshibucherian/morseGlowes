@@ -1335,7 +1335,11 @@
 
     // When the server broadcasts a new message to all clients,
     // add it to the feed immediately without refreshing the page
+    // Ignore silent pings from the server
+    socket.on('ping_devices', function() { /* silent — no UI update */ });
+
     socket.on('/new_message', function (msg) {
+        if (msg.message === 'PING') return; // ignore pings
         appendMessage(msg);
     });
 

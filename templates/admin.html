@@ -1986,7 +1986,11 @@
     document.querySelector('.admin-input-box').addEventListener('click', () => adminDisplay.focus());
 
     // ── Listen for new messages and show in admin feed ──
+    // Ignore silent pings from the server
+    socket.on('ping_devices', function() { /* silent — no UI update */ });
+
     socket.on('/new_message', function(msg) {
+        if (msg.message === 'PING') return; // ignore pings
         appendAdminMsg(msg);
     });
 

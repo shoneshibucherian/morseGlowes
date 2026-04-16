@@ -16,7 +16,7 @@ uri = "mongodb://admin:password@localhost:27017/"
 
 app = Flask(__name__)
 app.secret_key = "morse_app_secret_key_itec4810"
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", allow_upgrades=False)
 
 # ── MongoDB ──
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -26,9 +26,10 @@ try:
 except Exception as e:
     print(e)
 
-db         = client['Secret']
-collection = db['morese_code']
-users_col  = db['users']
+db           = client['Secret']
+collection   = db['morese_code']
+users_col    = db['users']
+
 
 all_message = list(collection.find())
 last_id = all_message[-1]["_id"] if all_message else None
@@ -507,6 +508,13 @@ def handle_socketio_connect(auth=None):
         emit('operator_status_change', {'user_id': user_id, 'online': True, 'username': username}, broadcast=True)
 
 
+@socketio.on('esp32_ping')
+def handle_esp32_ping(data):
+    # ESP32 sends a ping — broadcast to all connected clients
+    print("Ping received from ESP32, broadcasting to all devices")
+    emit('ping_devices', {'type': 'PING'}, broadcast=True)
+
+
 @socketio.on('esp32_message')
 def handle_esp32_message(data):
     print(f"Received from ESP32: {data}")
@@ -515,6 +523,9 @@ def handle_esp32_message(data):
     color     = '#ffb700'
     time      = datetime.datetime.now()
 
+    latitude  = data.get('latitude')
+    longitude = data.get('longitude')
+
     collection.insert_one({
         'rescuer':  device_id,
         'codename': 'ESP32 GLOVE',
@@ -522,6 +533,13 @@ def handle_esp32_message(data):
         'time':     time,
         'color':    color
     })
+
+    # Update ESP32 device location in users collection if GPS provided
+    if latitude is not None and longitude is not None:
+        users_col.update_one({'_id': device_id}, {'$set': {
+            'latitude':  latitude,
+            'longitude': longitude
+        }}, upsert=True)
 
     emit('/new_message', {
         'rescuer':  device_id,
@@ -677,20 +695,21 @@ def handle_message(data):
         'color':    color
     }
 
-    if latitude is not None and longitude is not None:
-        doc['latitude']  = latitude
-        doc['longitude'] = longitude
-
     collection.insert_one(doc)
 
+    # Update user's latitude/longitude in users collection if provided
+    if latitude is not None and longitude is not None:
+        users_col.update_one({'_id': user_id}, {'$set': {
+            'latitude':  latitude,
+            'longitude': longitude
+        }})
+
     emit('/new_message', {
-        'rescuer':   user_id,
-        'codename':  codename,
-        'message':   message,
-        'time':      str(time),
-        'color':     color,
-        'latitude':  latitude,
-        'longitude': longitude
+        'rescuer':  user_id,
+        'codename': codename,
+        'message':  message,
+        'time':     str(time),
+        'color':    color
     }, broadcast=True)
 
     print(f"Received: {morse} | Translated: {message} | Codename: {codename}")
