@@ -14,9 +14,48 @@ import random
 
 uri = "mongodb://admin:password@localhost:27017/"
 
+device_status = {
+    "g1": {"last_seen": 0},
+    "g2": {"last_seen": 0}
+}
+
+def handle_missing_ping(device_id):
+    users_col.update_one(
+        {'username': device_id},
+        {'$set': {
+            'online': 'false'
+        }}
+    )
+def check_all_devices_timeout(ping_time):
+    socketio.sleep(5)
+
+    current_time = time.time()
+
+    for device_id, info in device_status.items():
+        # If device didn't respond AFTER this ping
+        if info["last_seen"] < ping_time:
+            print(f"{device_id} did NOT respond within 5 seconds")
+        else:
+            
+            print(f"{device_id} responded successfully")
+            handle_missing_ping(device_id)
+
+def ping_broadcast():
+    while True:
+        socketio.emit('/new_message', {'message': 'PING'}, broadcast=True)
+
+
+        ping_time = time.time()
+
+        # Start timeout checker for this round
+        socketio.start_background_task(check_all_devices_timeout, ping_time)
+
+        socketio.sleep(30)
+
 app = Flask(__name__)
 app.secret_key = "morse_app_secret_key_itec4810"
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", allow_upgrades=False)
+# socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", allow_upgrades=False)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ── MongoDB ──
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -30,6 +69,39 @@ db           = client['Secret']
 collection   = db['morese_code']
 users_col    = db['users']
 
+
+# --- Battery Simulation Config ---
+bat1_MAX_VOLTAGE = 4.0
+bat1_FULL_VOLTAGE = 3.7
+bat1_MIN_VOLTAGE = 3.1
+
+bat1_DISCHARGE_RATE = 0.00005  # volts per second (tweak this)
+
+
+bat2_MAX_VOLTAGE = 4.0
+bat2_FULL_VOLTAGE = 3.7
+bat2_MIN_VOLTAGE = 3.1
+
+bat2_DISCHARGE_RATE = 0.0005  
+
+
+battery1 = {
+    "voltage": bat1_FULL_VOLTAGE,
+    "last_update": time.time(),
+    "DISCHARGE_RATE": bat1_DISCHARGE_RATE,
+    "MIN_VOLTAGE": bat1_MIN_VOLTAGE,
+    "FULL_VOLTAGE": bat1_FULL_VOLTAGE,
+    "ACTUAL_VOLTAGE": 0,
+}
+
+battery2 = {
+    "voltage": bat2_FULL_VOLTAGE,
+    "last_update": time.time(),
+    "DISCHARGE_RATE": bat2_DISCHARGE_RATE,
+    "MIN_VOLTAGE": bat2_MIN_VOLTAGE,
+    "FULL_VOLTAGE": bat2_FULL_VOLTAGE,
+    "ACTUAL_VOLTAGE": 0,
+}
 
 all_message = list(collection.find())
 last_id = all_message[-1]["_id"] if all_message else None
@@ -459,11 +531,31 @@ def full_messages():
 # @socketio.on('lora_data')
 # def handle_lora_data(data):
 #     print("Received from ESP32:", data)
-
+ 
 @socketio.on('lora_data')
 def handle_lora_data(data):
     print("SUCCESS! Received from Heltec:", data)
     # If you want to broadcast this to the web dashboard:
+    # the data is off the format g1:name,lat,lon,battery
+    #get the battery val and add it to battery1 if the data starts with "g1:" and to battery2 if the data starts with "g2:"
+    if data["message"].startswith("g1:"):
+        try:
+            battery_val = float(data["message"].split(",")[2])
+            battery1["ACTUAL_VOLTAGE"] = int(battery_val)/1000
+            print(f"Updated battery1 voltage to {battery_val}V")
+        except Exception as e:
+            print(f"Error parsing battery value for battery1: {e}")
+    elif data["message"].startswith("g2:"):
+        try:
+            battery_val = float(data["message"].split(",")[2])
+            battery2["ACTUAL_VOLTAGE"] = int(battery_val)/1000
+            print(f"Updated battery2 voltage to {battery2['ACTUAL_VOLTAGE']}V")
+        except Exception as e:
+            print(f"Error parsing battery value for battery2: {e}")
+
+
+        
+    # if data starts with "g1:",  then add the battery val
     emit('/new_message', {
         'username': 'Heltec LoRa',
         'message': data.get('message', 'No message'),
@@ -499,6 +591,9 @@ def handle_socketio_connect(auth=None):
     username  = session.get('username', 'unknown')
     user_id   = session.get('user_id')
     socket_id = flask_request.sid
+    global ping_thread
+    if not globals().get('ping_thread'):
+        ping_thread = socketio.start_background_task(ping_broadcast)
     print(f"Socket connected: {username} ({socket_id})")
     emit('message', {'message': 'Welcome from MorseApp Flask!'})
 
@@ -508,11 +603,11 @@ def handle_socketio_connect(auth=None):
         emit('operator_status_change', {'user_id': user_id, 'online': True, 'username': username}, broadcast=True)
 
 
-@socketio.on('esp32_ping')
-def handle_esp32_ping(data):
-    # ESP32 sends a ping — broadcast to all connected clients
-    print("Ping received from ESP32, broadcasting to all devices")
-    emit('ping_devices', {'type': 'PING'}, broadcast=True)
+# @socketio.on('esp32_ping')
+# def handle_esp32_ping(data):
+#     # ESP32 sends a ping — broadcast to all connected clients
+#     print("Ping received from ESP32, broadcasting to all devices")
+#     emit('ping_devices', {'type': 'PING'}, broadcast=True)
 
 
 @socketio.on('esp32_message')
@@ -552,36 +647,9 @@ def handle_esp32_message(data):
 
 
 
-# --- Battery Simulation Config ---
-bat1_MAX_VOLTAGE = 4.0
-bat1_FULL_VOLTAGE = 3.7
-bat1_MIN_VOLTAGE = 3.1
-
-bat1_DISCHARGE_RATE = 0.00005  # volts per second (tweak this)
-
-
-bat2_MAX_VOLTAGE = 4.0
-bat2_FULL_VOLTAGE = 3.7
-bat2_MIN_VOLTAGE = 3.1
-
-bat2_DISCHARGE_RATE = 0.0005  
 
 # --- Internal State ---
-battery1 = {
-    "voltage": bat1_FULL_VOLTAGE,
-    "last_update": time.time(),
-    "DISCHARGE_RATE": bat1_DISCHARGE_RATE,
-    "MIN_VOLTAGE": bat1_MIN_VOLTAGE,
-    "FULL_VOLTAGE": bat1_FULL_VOLTAGE
-}
 
-battery2 = {
-    "voltage": bat2_FULL_VOLTAGE,
-    "last_update": time.time(),
-    "DISCHARGE_RATE": bat2_DISCHARGE_RATE,
-    "MIN_VOLTAGE": bat2_MIN_VOLTAGE,
-    "FULL_VOLTAGE": bat2_FULL_VOLTAGE
-}
 
 def update_battery(battery):
     now = time.time()
@@ -610,7 +678,7 @@ def voltage_to_percentage(battery, voltage):
 def get_battery1():
     update_battery(battery1)
 
-    voltage = battery1["voltage"]
+    voltage = battery1["ACTUAL_VOLTAGE"] if battery1["ACTUAL_VOLTAGE"] > 0 else battery1["voltage"]
     percentage = voltage_to_percentage(battery1,voltage)
 
     return jsonify({
@@ -662,7 +730,8 @@ def get_graph():
 def get_battery2():
     update_battery(battery2)
 
-    voltage = battery2["voltage"]
+    # voltage = battery2["voltage"]
+    voltage = battery2["ACTUAL_VOLTAGE"] if battery2["ACTUAL_VOLTAGE"] > 0 else battery2["voltage"]
     percentage = voltage_to_percentage(battery2, voltage)
 
     return jsonify({
