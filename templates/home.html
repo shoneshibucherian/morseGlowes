@@ -1409,8 +1409,7 @@
         const timeStr = msg.time ? new Date(msg.time).toLocaleTimeString() : new Date().toLocaleTimeString();
         const metaEl  = document.createElement('span');
         metaEl.className = 'message-right-meta';
-        metaEl.innerHTML = '<span>⏱ ' + timeStr + '</span>' +
-            (msg.latitude ? '<span>📍 ' + parseFloat(msg.latitude).toFixed(4) + ', ' + parseFloat(msg.longitude).toFixed(4) + '</span>' : '');
+        metaEl.innerHTML = '<span>⏱ ' + timeStr + '</span>';
 
         item.appendChild(codenameEl);
         item.appendChild(separatorEl);
@@ -1437,17 +1436,27 @@
 
     function requestLocation() {
         if (!navigator.geolocation) {
-            // Browser doesn't support geolocation at all
             locationStatus.textContent = '⊙ Location: Not Supported';
             locationStatus.className = 'location-status denied';
             return;
         }
         navigator.geolocation.getCurrentPosition(
-            // Success: store coordinates and show them in the header
+            // Success: store coordinates, show in header, and immediately save to DB
             pos => {
                 userLocation = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
                 locationStatus.textContent = `⊙ Location: ${userLocation.latitude.toFixed(3)}, ${userLocation.longitude.toFixed(3)}`;
                 locationStatus.className = 'location-status granted';
+
+                // Save location to MongoDB immediately on login without sending a message
+                fetch('/update_location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        latitude: userLocation.latitude,
+                        longitude: userLocation.longitude
+                    })
+                });
             },
             // Error: user denied permission or location unavailable
             err => {
