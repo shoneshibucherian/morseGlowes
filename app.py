@@ -12,7 +12,7 @@ uri = "mongodb://admin:password@localhost:27017/"
 
 app = Flask(__name__)
 app.secret_key = "morse_app_secret_key_itec4810"
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", allow_upgrades=False)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ── MongoDB ──
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -271,6 +271,23 @@ def update_color():
     collection.update_many({'rescuer': user_id}, {'$set': {'color': new_color}})
     session['color'] = new_color
     return jsonify({'message': 'Color updated.', 'color': new_color}), 200
+
+
+@app.route('/update_location', methods=['POST'])
+@login_required
+def update_location():
+    data      = request.get_json()
+    latitude  = data.get('latitude')
+    longitude = data.get('longitude')
+
+    if latitude is None or longitude is None:
+        return jsonify({'error': 'latitude and longitude required.'}), 400
+
+    users_col.update_one({'_id': session['user_id']}, {'$set': {
+        'latitude':  latitude,
+        'longitude': longitude
+    }})
+    return jsonify({'message': 'Location updated.'}), 200
 
 
 @app.route('/update_layout', methods=['POST'])
