@@ -12,7 +12,7 @@ uri = "mongodb://admin:password@localhost:27017/"
 
 app = Flask(__name__)
 app.secret_key = "morse_app_secret_key_itec4810"
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", allow_upgrades=False)
 
 # ── MongoDB ──
 client = MongoClient(uri, server_api=ServerApi('1'))
@@ -25,14 +25,10 @@ except Exception as e:
 db           = client['Secret']
 collection   = db['morese_code']
 users_col    = db['users']
-locations_col = db['operator_locations']  # One entry per user, updated in place
+
 
 all_message = list(collection.find())
 last_id = all_message[-1]["_id"] if all_message else None
-
-# ── Ping Configuration ──
-# Change this value to adjust how often the server pings all connected devices
-PING_INTERVAL_SECONDS = 30
 
 # ── NATO Phonetic Alphabet ──
 NATO = [
@@ -467,22 +463,6 @@ def connect_user():
 # SOCKET.IO
 # ══════════════════════════════════════════
 
-# ── Ping background thread ──
-# Sends a silent PING to all connected devices every PING_INTERVAL_SECONDS.
-# The ping is ignored by the web interface — it's just to keep connections alive.
-import threading
-
-def ping_loop():
-    while True:
-        import time
-        time.sleep(PING_INTERVAL_SECONDS)
-        socketio.emit('ping_devices', {'type': 'PING'})
-        print(f"Ping sent to all devices (interval: {PING_INTERVAL_SECONDS}s)")
-
-ping_thread = threading.Thread(target=ping_loop, daemon=True)
-ping_thread.start()
-
-
 @socketio.on('disconnect')
 def handle_disconnect():
     username = session.get('username', 'unknown')
@@ -510,6 +490,13 @@ def handle_socketio_connect(auth=None):
         emit('operator_status_change', {'user_id': user_id, 'online': True, 'username': username}, broadcast=True)
 
 
+@socketio.on('esp32_ping')
+def handle_esp32_ping(data):
+    # ESP32 sends a ping — broadcast to all connected clients
+    print("Ping received from ESP32, broadcasting to all devices")
+    emit('ping_devices', {'type': 'PING'}, broadcast=True)
+
+
 @socketio.on('esp32_message')
 def handle_esp32_message(data):
     print(f"Received from ESP32: {data}")
@@ -518,6 +505,9 @@ def handle_esp32_message(data):
     color     = '#ffb700'
     time      = datetime.datetime.now()
 
+    latitude  = data.get('latitude')
+    longitude = data.get('longitude')
+
     collection.insert_one({
         'rescuer':  device_id,
         'codename': 'ESP32 GLOVE',
@@ -525,6 +515,13 @@ def handle_esp32_message(data):
         'time':     time,
         'color':    color
     })
+
+    # Update ESP32 device location in users collection if GPS provided
+    if latitude is not None and longitude is not None:
+        users_col.update_one({'_id': device_id}, {'$set': {
+            'latitude':  latitude,
+            'longitude': longitude
+        }}, upsert=True)
 
     emit('/new_message', {
         'rescuer':  device_id,
@@ -561,34 +558,21 @@ def handle_message(data):
         'color':    color
     }
 
-    if latitude is not None and longitude is not None:
-        doc['latitude']  = latitude
-        doc['longitude'] = longitude
-
     collection.insert_one(doc)
 
-    # Update operator location table if coordinates were provided
+    # Update user's latitude/longitude in users collection if provided
     if latitude is not None and longitude is not None:
-        locations_col.update_one(
-            {'_id': user_id},
-            {'$set': {
-                '_id':       user_id,
-                'codename':  codename,
-                'latitude':  latitude,
-                'longitude': longitude,
-                'updated_at': datetime.datetime.now()
-            }},
-            upsert=True  # Insert if not exists, update if it does
-        )
+        users_col.update_one({'_id': user_id}, {'$set': {
+            'latitude':  latitude,
+            'longitude': longitude
+        }})
 
     emit('/new_message', {
-        'rescuer':   user_id,
-        'codename':  codename,
-        'message':   message,
-        'time':      str(time),
-        'color':     color,
-        'latitude':  latitude,
-        'longitude': longitude
+        'rescuer':  user_id,
+        'codename': codename,
+        'message':  message,
+        'time':     str(time),
+        'color':    color
     }, broadcast=True)
 
     print(f"Received: {morse} | Translated: {message} | Codename: {codename}")
