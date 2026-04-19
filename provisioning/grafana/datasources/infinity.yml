@@ -1,0 +1,14 @@
+apiVersion: 1
+
+datasources:
+  - name: Infinity
+    uid: eepv1n5dyq4n4c
+    type: yesoreyeram-infinity-datasource      # <‑‑ key line
+    access: proxy
+    isDefault: true
+
+    # Infinity needs to know which hosts it is allowed to call
+#    jsonData:
+#      allowedHosts:                            # :contentReference[oaicite:2]{index=2}
+#        - http://host.docker.internal          # Flask running on the host
+        # add more origins if your dashboard hits other URLs

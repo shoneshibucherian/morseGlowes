@@ -26,29 +26,31 @@ def handle_missing_ping(device_id):
             'online': 'false'
         }}
     )
-def check_all_devices_timeout(ping_time):
-    socketio.sleep(5)
+def check_device_timeout(device_id, ping_time):
+    socketio.sleep(30)
 
-    current_time = time.time()
+    last_seen = device_status[device_id]["last_seen"]
 
-    for device_id, info in device_status.items():
-        # If device didn't respond AFTER this ping
-        if info["last_seen"] < ping_time:
-            print(f"{device_id} did NOT respond within 5 seconds")
-        else:
-            
-            print(f"{device_id} responded successfully")
-            handle_missing_ping(device_id)
-
+    if last_seen < ping_time:
+        print(f"{device_id} did NOT respond within 5 seconds")
+        handle_missing_ping(device_id)
+    else:
+        print(f"{device_id} responded successfully")
 def ping_broadcast():
     while True:
+        # ---- G1 ----
         socketio.emit('/new_message', {'message': 'PING'}, broadcast=True)
+        g1_ping_time = time.time()
 
+        socketio.start_background_task(check_device_timeout, "g1", g1_ping_time)
 
-        ping_time = time.time()
+        socketio.sleep(4)  # wait before next device
 
-        # Start timeout checker for this round
-        socketio.start_background_task(check_all_devices_timeout, ping_time)
+        # ---- G2 ----
+        socketio.emit('/new_message', {'message': 'g2PING'}, broadcast=True)
+        g2_ping_time = time.time()
+
+        socketio.start_background_task(check_device_timeout, "g2", g2_ping_time)
 
         socketio.sleep(30)
 
@@ -526,6 +528,7 @@ def get_new_messages():
                 msg["_id"] = str(msg["_id"])
             if last_id != all_messages[-1]["_id"]:
                 last_id = all_messages[-1]["_id"]
+                print(f"New message detected.",[all_messages[-1]])
                 return jsonify([all_messages[-1]])
         return jsonify([])
     except Exception as e:
@@ -556,6 +559,11 @@ def handle_lora_data(data):
     # the data is off the format g1:name,lat,lon,battery
     #get the battery val and add it to battery1 if the data starts with "g1:" and to battery2 if the data starts with "g2:"
     if data["message"].startswith("g1:"):
+        device_status["g1"]["last_seen"] = time.time()
+        users_col.update_one(
+            {'username': 'g1'},   # or g2
+            {'$set': {'online': True}}
+        )
         try:
             battery_val = float(data["message"].split(",")[2])
             battery1["ACTUAL_VOLTAGE"] = int(battery_val)/1000
@@ -563,6 +571,11 @@ def handle_lora_data(data):
         except Exception as e:
             print(f"Error parsing battery value for battery1: {e}")
     elif data["message"].startswith("g2:"):
+        device_status["g2"]["last_seen"] = time.time()
+        users_col.update_one(
+            {'username': 'g2'},   # or g2
+            {'$set': {'online': True}}
+        )
         try:
             battery_val = float(data["message"].split(",")[2])
             battery2["ACTUAL_VOLTAGE"] = int(battery_val)/1000
@@ -571,14 +584,14 @@ def handle_lora_data(data):
             print(f"Error parsing battery value for battery2: {e}")
 
 
-        
+    else:    
     # if data starts with "g1:",  then add the battery val
-    emit('/new_message', {
-        'username': 'Heltec LoRa',
-        'message': data.get('message', 'No message'),
-        'time': str(datetime.datetime.now()),
-        'color': '#00ff41'
-    }, broadcast=True)
+        emit('/new_message', {
+            'username': 'Heltec LoRa',
+            'message': data.get('message', 'No message'),
+            'time': str(datetime.datetime.now()),
+            'color': '#00ff41'
+        }, broadcast=True)
 
 @app.route('/connect')
 @login_required
@@ -728,7 +741,7 @@ def get_graph():
     for user in users:
             if user["username"]=="admin":
                 node_row={"id": user['username'], "title": user['username'], "color": "green"}
-            elif user['online']==True:
+            elif "online" in user and user['online']==True:
                 node_row={"id": user['username'], "title": user['username'], "color": "green"}
             else:
                 node_row={"id": user['username'], "title": user['username'], "color": "red"}

@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include "HT_SSD1306Wire.h"
 
+
 // --- Hardware Pins & Thresholds ---
 const int PIN_DOT = 7, PIN_DASH = 6, PIN_SPACE = 5, PIN_DEL = 4, PIN_SENT = 3;
 const uint32_t threshold = 600000;
@@ -13,7 +14,7 @@ const uint32_t threshold = 600000;
 #define LORA_BANDWIDTH              0         // 125 kHz
 #define LORA_SPREADING_FACTOR       7         // SF7
 #define LORA_CODINGRATE             1         // 4/5
-#define BUFFER_SIZE                 30
+#define BUFFER_SIZE                 256
 
 char txpacket[BUFFER_SIZE];
 char rxpacket[BUFFER_SIZE];
@@ -21,6 +22,7 @@ static RadioEvents_t RadioEvents;
 bool lora_idle = true;
 int16_t last_rssi = 0;
 volatile bool rxFlag = false;
+bool shouldReplyToPing = false; // New flag
 
 // --- OLED Setup ---
 static SSD1306Wire display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED);
@@ -43,20 +45,54 @@ String lastReceived = "None";
 bool isPressed[5] = {false, false, false, false, false};
 
 void VextON() { pinMode(Vext, OUTPUT); digitalWrite(Vext, LOW); }
+String json="";
+void replyToPing(void){
+    lora_idle = false;
+    Serial.print("Replying to Ping");
+    String coordinate = "33.980605849171305,-84.00518567235461";
+    int batteryVolt = analogReadMilliVolts(1) * 490 / 100;
+    String device_name = "g2";
+    json =  device_name +":" ;
+    json += coordinate + ",";
+    json +=  String(batteryVolt);
+    
+
+    sprintf(txpacket, "%s", json.c_str());
+    Radio.Send((uint8_t *)txpacket, strlen(txpacket));
+}
 
 // --- LoRa Callbacks ---
 void OnTxDone(void) { Serial.println("TX Done"); lora_idle = true; }
 void OnTxTimeout(void) { Radio.Sleep(); lora_idle = true; }
+// void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
+//     last_rssi = rssi;
+//     memcpy(rxpacket, payload, size);
+//     rxpacket[size] = '\0';
+//     lastReceived = rxpacket;
+//     Radio.Sleep();
+//     lora_idle = true;
+//     rxFlag = true;
+//     Serial.printf("Received: %s\n", lastReceived);
+//     if(lastReceived=="PING"){
+//         replyToPing();
+//     }
+// }
+
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
     last_rssi = rssi;
     memcpy(rxpacket, payload, size);
     rxpacket[size] = '\0';
-    lastReceived = rxpacket;
-    Radio.Sleep();
+    lastReceived = String(rxpacket);
+    
     lora_idle = true;
     rxFlag = true;
-    Serial.printf("Received: %s\n", lastReceived);
+
+    // Just set the flag, don't call the function here!
+    if(lastReceived == "g2ping" || lastReceived == "g2PING") {
+        shouldReplyToPing = true;
+    }
 }
+
 
 void updateScreen() {
     display.clear();
@@ -92,6 +128,16 @@ void updateScreen() {
 
 void setup() {
     Serial.begin(115200);
+
+    //Following three is battery code
+      // Set the resolution of the analog-to-digital converter (ADC) to 12 bits (0-4095):
+    analogReadResolution(12);
+    // Set pin 37 as an output pin (used for ADC control):
+    pinMode(37, OUTPUT);
+    // Set pin 37 to HIGH (enable ADC control):
+    digitalWrite(37, HIGH);
+
+
     VextON(); delay(100);
     Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
 
@@ -158,6 +204,12 @@ void loop() {
     }
 
     if (changed) updateScreen();
+
+    if (shouldReplyToPing) {
+        shouldReplyToPing = false; // Reset flag
+        replyToPing();             // Now it's safe to send
+        // Radio.Rx(0);               // Return to listening after sending
+    }
 
     if (rxFlag) {
         updateScreen();
